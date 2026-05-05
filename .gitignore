@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.venv/
+venv/
+
+# dotagent runtime cache (when used in dev against itself)
+.agent/.cache/
+.agent/memory/working/
