@@ -3,9 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from dotagent.adapters import REGISTRY, read_source
+from dotagent.config import Config, merge_defaults
+from dotagent.context import build as build_context
 from dotagent.memory import EpisodicEvent, EpisodicMemory, SemanticEntry, SemanticMemory
 from dotagent.paths import Paths
 from dotagent.scaffold import scaffold_agent_dir
+from dotagent.sources import reindex_all
+from dotagent.util import dump_yaml
 
 
 def test_each_adapter_renders(tmp_path: Path):
@@ -90,6 +94,37 @@ def test_episodic_append_is_safe_concurrently_per_actor(tmp_path: Path):
     events = list(mem.iter_events())
     actors = {e["actor"] for e in events}
     assert actors == {"alice", "bob"}
+
+
+def test_claude_adapter_renders_full_context_with_bug_registry(tmp_path: Path):
+    """The richer adapter render must surface bug registry, anti-patterns, and source pointers."""
+    paths = Paths(repo=tmp_path)
+    scaffold_agent_dir(paths)
+    cfg_data = merge_defaults({"project": {"name": "demo"}})
+    dump_yaml(paths.config, cfg_data)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "bug-registry.md").write_text(
+        "# Bug Registry\n\n"
+        "## BUG-007: Auth bypass\n"
+        "- **Severity**: critical\n"
+        "- **File**: services/auth/jwt.py\n\nStale tokens accepted.\n"
+    )
+    (tmp_path / "docs" / "anti-patterns.md").write_text(
+        "# Anti-Patterns\n\n## ANTI-007: Direct DB writes\n- **Severity**: high\n\nBypasses repo layer.\n"
+    )
+    cfg = Config.load(paths)
+    reindex_all(paths, cfg.raw["sources"])
+    ctx = build_context(paths, actor="alice", config=cfg)
+
+    adapter = REGISTRY["claude"](paths)
+    adapter.write(adapter.render(ctx))
+    body = (tmp_path / "CLAUDE.md").read_text()
+    assert "BUG-007" in body
+    assert "Auth bypass" in body
+    assert "ANTI-007" in body
+    assert "docs/bug-registry.md" in body
+    assert "docs/anti-patterns.md" in body
+    assert "Source pointers" in body
 
 
 def test_semantic_uses_content_hash_slug(tmp_path: Path):

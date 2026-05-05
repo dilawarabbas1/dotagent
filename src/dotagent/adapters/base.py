@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 from ..paths import Paths
 
@@ -20,7 +21,7 @@ class Adapter(ABC):
         self.paths = paths
 
     @abstractmethod
-    def render(self, source: dict) -> list[RenderedFile]:
+    def render(self, source: Union[dict, "object"]) -> list[RenderedFile]:
         ...
 
     def write(self, files: list[RenderedFile]) -> list[Path]:
@@ -33,7 +34,11 @@ class Adapter(ABC):
 
 
 def read_source(paths: Paths) -> dict:
-    """Load the five source markdown files. Missing files become empty strings."""
+    """Load the five source markdown files. Missing files become empty strings.
+
+    Backwards-compatible helper. New code should use `dotagent.context.build()` and
+    pass the resulting `Context` to adapters' `render()`.
+    """
 
     def _read(p: Path) -> str:
         return p.read_text() if p.exists() else ""

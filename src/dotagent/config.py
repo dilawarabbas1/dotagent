@@ -15,6 +15,21 @@ DEFAULT_CONFIG: dict = {
         "opencode": False,
         "custom": False,
     },
+    "sources": {
+        "bug_registry": "docs/bug-registry.md",
+        "anti_patterns": "docs/anti-patterns.md",
+        "redis_keys": "docs/redis-key-registry.md",
+        "db_impact_map": "docs/db-impact-map.md",
+        "dependency_map": "docs/dependency-map.md",
+        "architecture": "docs/architecture.md",
+        "extra": [],
+    },
+    "context": {
+        "bug_registry_top_n": 15,
+        "anti_patterns_top_n": 10,
+        "recent_activity_top_n": 8,
+        "embed_full_docs": False,
+    },
     "dream": {
         "enabled": True,
         "cron": {

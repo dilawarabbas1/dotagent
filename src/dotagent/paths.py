@@ -93,6 +93,22 @@ class Paths:
     def preferences(self) -> Path:
         return self.agent / "preferences.md"
 
+    @property
+    def sources_cache(self) -> Path:
+        return self.cache / "sources.json"
+
+    @property
+    def semantic_sources(self) -> Path:
+        return self.semantic / "sources"
+
+    @property
+    def working_current(self) -> Path:
+        return self.working / "current"
+
+    @property
+    def cache_gitignore(self) -> Path:
+        return self.cache / ".gitignore"
+
 
 def find_repo_root(start: Path | None = None) -> Path:
     """Walk up until we hit a git repo or an existing .agent/. Default cwd."""

@@ -138,11 +138,20 @@ dotagent sync       # idempotent
 
 ## What's left
 
-### Phase 1 polish (not blocking, but nice)
+### Phase 1 polish — SHIPPED (2026-05-05)
 
-- **Existing-CLAUDE.md ingest**: on `dotagent init`, if CLAUDE.md / .cursorrules / .github/copilot-instructions.md / AGENTS.md exist, parse them and seed `.agent/{style,rules,architecture,patterns,preferences}.md` before overwriting. Today it overwrites with scaffold/LLM content, losing existing hand-written copy.
+- **`docs/`-as-source-of-truth — wired.** `.agent/config.yaml` now has a `sources:` block pointing at `docs/bug-registry.md`, `docs/anti-patterns.md`, `docs/redis-key-registry.md`, `docs/db-impact-map.md`, `docs/dependency-map.md`, `docs/architecture.md`. Indexed by `dotagent.sources` into structured entries (bugs ranked by severity, tables/keys/components extracted). Cache at `.agent/.cache/sources.json` (gitignored). Pointer cards committed to `.agent/memory/semantic/sources/<name>.md`.
+- **Context resolver — shipped.** `dotagent.context.build()` merges the five `.agent/*.md` files + indexed `docs/` sources + semantic memory + personal memory + working memory + recent episodic events into a single `Context` object. All four adapters render from it.
+- **Adapter outputs — fully enriched.** CLAUDE.md / .cursorrules / .github/copilot-instructions.md / AGENTS.md now embed: project rules, top-N bugs (with files/components), anti-patterns, DB impact map, redis keys, dependency map, architecture sections, personal preferences, working-memory snapshot, recent episodic activity, and source-of-truth pointers.
+- **Existing-config ingest — shipped.** `dotagent init` parses existing CLAUDE.md / .cursorrules / .github/copilot-instructions.md / AGENTS.md, routes H2 sections into the right `.agent/*.md` bucket (style/rules/architecture/patterns/preferences), preserves leftover sections under "Legacy notes" so nothing is lost. Skip with `--no-ingest`.
+- **Working memory — wired.** Per-actor `current.json` tracks session/branch/recent-files/recent-events/task. `dotagent observe` updates it on every event and auto-reindexes when `docs/*.md` is touched.
+- **New commands**: `dotagent reindex` (re-parse all sources), `dotagent context` (print merged Context as summary / full markdown / JSON for debugging).
+- **Test coverage**: 29 tests, all green. Covers source parsers (bug-registry, anti-patterns, redis-keys, db-impact-map, dependency-map), Context resolver, working memory dedup, ingest, and full-context adapter rendering.
+
+### Phase 1 polish (still nice to have)
+
 - **`--dry-run`** flag is wired but should also show a unified diff vs existing files before any write.
-- **Refactor source loading** so `.agent/config.yaml`'s `sources:` block can reference existing `<project>/docs/` files (e.g. `docs/bug-registry.md`, `docs/anti-patterns.md`), making `docs/` the source of truth and `.agent/` an index — not a duplicate. Critical for projects with established `docs/` conventions.
+- LLM-assisted source extraction for `docs/` files that don't follow the `## ID: Title` convention (current parser is heuristic).
 
 ### Phase 2 — Episodic + visibility
 

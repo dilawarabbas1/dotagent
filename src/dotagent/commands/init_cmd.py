@@ -6,14 +6,16 @@ import click
 
 from ..adapters import REGISTRY as ADAPTER_REGISTRY
 from ..adapters import get as get_adapter
-from ..adapters import read_source
 from ..config import Config, merge_defaults
+from ..context import build as build_context
 from ..discovery import discover
 from ..hooks import install_claude_hooks, install_git_hooks
 from ..identity import resolve, save_user_identity, upsert_developer
+from ..ingest import ingest_existing
 from ..llm import LLM
 from ..paths import Paths, find_repo_root
 from ..scaffold import scaffold_agent_dir
+from ..sources import reindex_all
 from ..util import dump_yaml
 
 
@@ -56,8 +58,9 @@ def _draft_with_llm(llm: LLM, disco) -> dict:
 @click.option("--interactive", is_flag=True, help="Run the question-driven flow.")
 @click.option("--no-llm", is_flag=True, help="Skip LLM drafting; use scaffold defaults.")
 @click.option("--no-hooks", is_flag=True, help="Skip installing git hooks.")
+@click.option("--no-ingest", is_flag=True, help="Skip ingesting existing CLAUDE.md / .cursorrules / etc.")
 @click.option("--dry-run", is_flag=True, help="Run all phases but write nothing.")
-def init(interactive: bool, no_llm: bool, no_hooks: bool, dry_run: bool) -> None:
+def init(interactive: bool, no_llm: bool, no_hooks: bool, no_ingest: bool, dry_run: bool) -> None:
     repo = find_repo_root()
     paths = Paths(repo=repo)
     click.echo(f"dotagent init → {repo}")
@@ -68,9 +71,18 @@ def init(interactive: bool, no_llm: bool, no_hooks: bool, dry_run: bool) -> None
     click.echo(f"  frameworks: {', '.join(disco.frameworks) or '(none)'}")
     click.echo(f"  detected ai-tool configs: {', '.join(disco.existing_ai_configs) or '(none)'}")
     if disco.has_claude_code_optimization:
-        click.echo("  · detected Claude-Code-Optimization assets — will import them in a later phase")
+        click.echo("  · detected Claude-Code-Optimization assets — will index docs/ as source of truth")
 
-    click.echo("· phase 2: drafting .agent/*.md")
+    click.echo("· phase 2: ingest existing AI-tool configs")
+    ingested: dict[str, str] = {}
+    if not no_ingest:
+        ingested = ingest_existing(repo)
+        if ingested:
+            click.echo(f"  imported {len(ingested)} bucketed sections from existing configs")
+        else:
+            click.echo("  no existing configs to ingest")
+
+    click.echo("· phase 3: drafting .agent/*.md")
     drafts: dict = {}
     if not no_llm:
         llm = LLM()
@@ -79,22 +91,28 @@ def init(interactive: bool, no_llm: bool, no_hooks: bool, dry_run: bool) -> None
         else:
             drafts = _draft_with_llm(llm, disco)
 
-    click.echo("· phase 3: identity")
+    click.echo("· phase 4: identity")
     identity = resolve(repo)
     click.echo(f"  actor: {identity.id} <{', '.join(identity.emails) or 'no email'}>")
 
     if dry_run:
-        click.echo("· dry-run: would scaffold .agent/, write adapters, install hooks. Stopping.")
+        click.echo("· dry-run: would scaffold .agent/, ingest configs, render adapters, install hooks. Stopping.")
         return
 
-    click.echo("· phase 4: scaffolding .agent/")
+    click.echo("· phase 5: scaffolding .agent/")
     written = scaffold_agent_dir(paths, overwrite=False)
     click.echo(f"  scaffolded {len(written)} files")
 
+    # Precedence for `.agent/*.md` content:
+    #   1. LLM draft (if any) — most tailored
+    #   2. Ingested existing config (preserves hand-written copy)
+    #   3. Scaffold default (already written)
     for key in ("style", "rules", "architecture", "patterns", "preferences"):
+        target = getattr(paths, key)
         if drafts.get(key):
-            target = getattr(paths, key)
             target.write_text(drafts[key].rstrip() + "\n")
+        elif ingested.get(key):
+            target.write_text(ingested[key].rstrip() + "\n")
 
     save_user_identity(identity)
     upsert_developer(paths, identity)
@@ -107,23 +125,33 @@ def init(interactive: bool, no_llm: bool, no_hooks: bool, dry_run: bool) -> None
             cfg_data["adapters"][k] = True
     dump_yaml(paths.config, cfg_data)
 
-    click.echo("· phase 5: rendering adapters")
+    click.echo("· phase 6: indexing docs/ sources")
     cfg = Config(raw=cfg_data, path=paths.config)
-    source = read_source(paths)
+    idx = reindex_all(paths, cfg.raw.get("sources") or {},
+                      embed_full_docs=bool((cfg.raw.get("context") or {}).get("embed_full_docs")))
+    present = sum(1 for s in idx.values() if s.exists)
+    click.echo(f"  indexed {present}/{len(idx)} sources from docs/")
+    for name, src in sorted(idx.items()):
+        flag = "ok" if src.exists else "missing"
+        click.echo(f"    · {name:20s} {flag:8s}  {src.path}")
+
+    click.echo("· phase 7: rendering adapters")
+    ctx = build_context(paths, actor=identity.id, config=cfg)
     rendered_count = 0
     for name in cfg.adapters_enabled:
         if name not in ADAPTER_REGISTRY:
             continue
         adapter = get_adapter(name)(paths)
-        files = adapter.render(source)
+        files = adapter.render(ctx)
         adapter.write(files)
         rendered_count += len(files)
     click.echo(f"  wrote {rendered_count} adapter files")
 
     if not no_hooks:
-        click.echo("· phase 6: installing hooks")
+        click.echo("· phase 8: installing hooks")
         ghs = install_git_hooks(paths)
         chs = install_claude_hooks(paths) if cfg.get("adapters", "claude") else []
         click.echo(f"  installed {len(ghs)} git + {len(chs)} claude hooks")
 
-    click.echo("\n✓ dotagent ready. Edit .agent/*.md, then run `dotagent sync`.")
+    click.echo("\n✓ dotagent ready.")
+    click.echo("  edit `.agent/*.md` (project-wide) or `docs/*.md` (canonical), then `dotagent sync`.")
