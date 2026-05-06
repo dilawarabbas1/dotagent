@@ -20,6 +20,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov", "ruff"]
+ml = ["numpy>=1.26", "scikit-learn>=1.4", "sentence-transformers>=2.7"]
+server = ["fastapi>=0.110", "uvicorn>=0.30", "starlette>=0.36"]
+watch = ["watchdog>=4.0"]
+all = ["dotagent[ml,server,watch]"]
 
 [project.scripts]
 dotagent = "dotagent.cli:main"

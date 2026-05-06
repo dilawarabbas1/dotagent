@@ -30,6 +30,11 @@ DEFAULT_CONFIG: dict = {
         "recent_activity_top_n": 8,
         "embed_full_docs": False,
     },
+    "server": {
+        "url": "",
+        "token": "",
+        "forward_events": False,
+    },
     "dream": {
         "enabled": True,
         "cron": {

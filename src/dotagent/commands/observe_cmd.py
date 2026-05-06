@@ -59,6 +59,34 @@ def observe(kind, tool, summary, files, sha, session) -> None:
         except Exception:
             pass
 
+    try:
+        from dataclasses import asdict as _asdict
+
+        from ..config import Config
+        cfg = Config.load(paths)
+        server_cfg = cfg.raw.get("server") or {}
+        if server_cfg.get("forward_events") and server_cfg.get("url"):
+            _forward_to_server(server_cfg, _asdict(event))
+    except Exception:
+        pass
+
+
+def _forward_to_server(server_cfg: dict, payload: dict) -> None:
+    import json as _json
+    import urllib.request
+
+    url = server_cfg["url"].rstrip("/") + "/events"
+    req = urllib.request.Request(
+        url,
+        data=_json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {server_cfg.get('token', '')}",
+        },
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=2.0).read()
+
 
 def _parse_files(s: str) -> list[str]:
     if not s:

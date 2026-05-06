@@ -138,6 +138,17 @@ dotagent sync       # idempotent
 
 ## What's left
 
+### Phase 7 — "honest list" closeout — SHIPPED (2026-05-06)
+
+The four items previously called out as "not yet built":
+
+- **Embedding-based clustering for Auto-Dream.** `dotagent.dream.clustering` uses sentence-transformers (`all-MiniLM-L6-v2`, ~22MB CPU) + scikit-learn DBSCAN on cosine distance to find semantically-related event clusters that the heuristic version misses. Optional via `pip install dotagent[ml]`; gracefully returns `[]` when extras absent. `dotagent dream run` opportunistically uses it when present (`--no-embeddings` to disable).
+- **Cursor < 0.40 file-watcher fallback.** `dotagent.watchers.cursor_watcher` debounces file events (2s window), checks for a running Cursor process via `pgrep`, and forwards aggregated edits as `tool=cursor` episodic events. `dotagent watch cursor` is the foreground command. Optional via `pip install dotagent[watch]` (adds `watchdog`).
+- **VS Code Copilot extension.** Real, buildable TypeScript scaffold at `extensions/vscode-copilot/`: package.json + tsconfig + src/extension.ts + README. Listens for inline-suggest commands + uses a configurable timing window to attribute saves/edits to Copilot, then calls `dotagent observe edit/save --tool copilot`. Build with `npm install && npm run package`; install via `code --install-extension dotagent-copilot-0.1.0.vsix`. Not yet on the VS Code Marketplace.
+- **`dotagent server`** — minimal centralized event server: FastAPI app with token-based RBAC (admin/writer/reader), `POST /events`, `GET /events`, SSE stream at `GET /events/stream`, token management at `POST/DELETE /tokens`, and a tiny live-stream dashboard at `/`. Persists to SQLite. Run with `dotagent serve --host 0.0.0.0 --port 9700`. Optional via `pip install dotagent[server]`. Clients forward via the `server.url` + `server.token` config (set `server.forward_events: true` in `.agent/config.yaml`); `dotagent observe` POSTs each event after writing locally.
+
+`pyproject.toml` extras: `[ml]`, `[server]`, `[watch]`, `[all]`. Default install stays lean.
+
 ### Phases 2-6 — SHIPPED (2026-05-06)
 
 - **Phase 2 (visibility & attribution).** SQLite event index (`memory/episodic/index.sqlite`) auto-built from JSONL. Commands: `dotagent who --file/--rule`, `dotagent activity --since/--by/--tool/--kind`, `dotagent timeline <file>`, `dotagent feed`, `dotagent leaderboard --since`, `dotagent reindex-events`. `prepare-commit-msg` hook adds `Co-authored-by: dotagent ... actor=X tool=Y` trailer so attribution survives in `git log` even on machines without dotagent. `dotagent trailer` exposes the trailer for the hook.

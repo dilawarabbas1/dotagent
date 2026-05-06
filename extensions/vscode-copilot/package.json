@@ -1,0 +1,39 @@
+{
+  "name": "dotagent-copilot",
+  "displayName": "dotagent — Copilot attribution",
+  "description": "Forward GitHub Copilot edits into dotagent so attribution survives in episodic memory.",
+  "version": "0.1.0",
+  "publisher": "dotagent",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "dotagent",
+      "properties": {
+        "dotagent.binaryPath": {
+          "type": "string",
+          "default": "dotagent",
+          "description": "Path to the dotagent CLI."
+        },
+        "dotagent.attributionWindowSeconds": {
+          "type": "number",
+          "default": 5,
+          "description": "How recently Copilot suggestion must have fired before a save is attributed to it."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

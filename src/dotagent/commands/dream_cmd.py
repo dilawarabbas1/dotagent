@@ -3,6 +3,8 @@ from __future__ import annotations
 import click
 
 from ..dream import generate_candidates, graduate, reject
+from ..dream.clustering import available as embeddings_available
+from ..dream.clustering import cluster_events
 from ..dream.cron import install as cron_install
 from ..dream.cron import uninstall as cron_uninstall
 from ..dream.cron import write_github_action
@@ -27,13 +29,18 @@ def dream_group() -> None:
 @dream_group.command(name="run", help="Extract signals + write candidate files.")
 @click.option("--since", default="30d")
 @click.option("--min-cluster-size", type=int, default=3)
+@click.option("--no-embeddings", is_flag=True, help="Disable embedding-based clustering even if installed.")
 @click.option("--quiet", is_flag=True)
 @click.option("--commit-candidates", is_flag=True, help="Reserved: stage candidate files for commit.")
-def cmd_run(since: str, min_cluster_size: int, quiet: bool, commit_candidates: bool) -> None:
+def cmd_run(since: str, min_cluster_size: int, no_embeddings: bool, quiet: bool, commit_candidates: bool) -> None:
     paths = _paths()
     sigs = extract_signals(paths, since=since, min_cluster_size=min_cluster_size)
+    if not no_embeddings and embeddings_available():
+        sigs.extend(cluster_events(paths, since=since, min_cluster_size=min_cluster_size))
     written = generate_candidates(paths, sigs)
     if not quiet:
+        embed_state = "on" if (not no_embeddings and embeddings_available()) else "off (heuristic only)"
+        click.echo(f"embeddings: {embed_state}")
         click.echo(f"signals: {len(sigs)}; candidates written: {len(written)}")
         for s in sigs:
             click.echo(f"  · [{s.kind}] {s.title}")

@@ -9,11 +9,13 @@ from .commands.init_cmd import init
 from .commands.migrate_cmd import migrate_cco
 from .commands.observe_cmd import observe
 from .commands.reindex_cmd import reindex
+from .commands.serve_cmd import serve
 from .commands.skill_cmd import skill_group
 from .commands.status_cmd import status
 from .commands.sync_cmd import sync
 from .commands.tool_cmd import tool_group
 from .commands.trailer_cmd import trailer
+from .commands.watch_cmd import watch_group
 from .commands.visibility_cmd import (
     activity,
     feed,
@@ -64,6 +66,10 @@ main.add_command(tool_group)
 
 # Phase 5: dream
 main.add_command(dream_group)
+
+# Beyond Phase 6: watcher + server
+main.add_command(watch_group)
+main.add_command(serve)
 
 
 if __name__ == "__main__":
