@@ -19,6 +19,20 @@ if command -v dotagent >/dev/null 2>&1; then
 fi
 """
 
+_PREPARE_COMMIT_MSG = """#!/usr/bin/env bash
+# dotagent prepare-commit-msg: append actor + AI tool trailer so attribution
+# survives in `git log` even on machines without dotagent installed.
+MSG_FILE="$1"
+SOURCE="$2"
+if [ "$SOURCE" = "merge" ] || [ "$SOURCE" = "squash" ]; then exit 0; fi
+if command -v dotagent >/dev/null 2>&1; then
+  TRAILER="$(dotagent trailer 2>/dev/null)"
+  if [ -n "$TRAILER" ] && ! grep -qF "$TRAILER" "$MSG_FILE" 2>/dev/null; then
+    printf "\\n%s\\n" "$TRAILER" >> "$MSG_FILE"
+  fi
+fi
+"""
+
 _CLAUDE_POST_TOOL = """#!/usr/bin/env bash
 # dotagent: forward Claude Code post-tool events into episodic memory
 if command -v dotagent >/dev/null 2>&1; then
@@ -32,7 +46,11 @@ def install_git_hooks(paths: Paths) -> list[Path]:
     if not hooks_dir.is_dir():
         return []
     written: list[Path] = []
-    for name, body in (("pre-commit", _PRE_COMMIT), ("post-commit", _POST_COMMIT)):
+    for name, body in (
+        ("pre-commit", _PRE_COMMIT),
+        ("post-commit", _POST_COMMIT),
+        ("prepare-commit-msg", _PREPARE_COMMIT_MSG),
+    ):
         target = hooks_dir / name
         if target.exists():
             existing = target.read_text()

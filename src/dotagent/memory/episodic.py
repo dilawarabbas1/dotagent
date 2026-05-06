@@ -41,6 +41,11 @@ class EpisodicMemory:
         path = sub / f"{event.actor}__{event.session}.jsonl"
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(asdict(event), separators=(",", ":")) + "\n")
+        try:
+            from .. import episodic_index
+            episodic_index.append(self.paths, asdict(event), str(path))
+        except Exception:
+            pass
         return path
 
     def iter_events(self):

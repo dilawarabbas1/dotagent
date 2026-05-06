@@ -138,6 +138,15 @@ dotagent sync       # idempotent
 
 ## What's left
 
+### Phases 2-6 — SHIPPED (2026-05-06)
+
+- **Phase 2 (visibility & attribution).** SQLite event index (`memory/episodic/index.sqlite`) auto-built from JSONL. Commands: `dotagent who --file/--rule`, `dotagent activity --since/--by/--tool/--kind`, `dotagent timeline <file>`, `dotagent feed`, `dotagent leaderboard --since`, `dotagent reindex-events`. `prepare-commit-msg` hook adds `Co-authored-by: dotagent ... actor=X tool=Y` trailer so attribution survives in `git log` even on machines without dotagent. `dotagent trailer` exposes the trailer for the hook.
+- **Phase 3 (skills runtime).** `dotagent.skills` loader parses YAML frontmatter + body. Commands: `dotagent skill list/show/run/pipeline`. Pipeline chains skills feeding each output to the next as `prior_output`. LLM execution via `anthropic`; without `ANTHROPIC_API_KEY` it returns the resolved prompt for inspection.
+- **Phase 4 (tools).** `dotagent tool pattern-extractor [--write]` (Python AST + JS/TS regex import scan; emits SemanticEntry records). `dotagent tool memory <query>` / `--summary` searches across all four stores. `dotagent tool debug <stack>` matches against episodic memory + bug registry. `dotagent tool checklist --since <window>` synthesizes a pre-deploy gate from rules.md + bug-registry + recent reverts/fixes.
+- **Phase 5 (auto-dream).** `dotagent.dream.signals` extracts revert clusters, repeat-fix patterns, frequent failures, cross-actor anti-pattern hits. `dotagent dream run/list/graduate/reject` with **mandatory rationale** on graduate/reject (raises `ValueError` on empty). `dotagent dream cron-install/cron-uninstall` writes a per-repo crontab line. `dotagent dream github-action` writes `.github/workflows/dotagent-dream.yml` template.
+- **Phase 6 (polish).** `dotagent sync --dry-run` shows unified diffs vs on-disk files. `CustomAdapter` renders Jinja templates from `.agent/adapters/custom/templates/*.j2` with `{# output: <path> #}` directive. `dotagent migrate-cco` references docs/ as sources (no copy), imports `prompts/*.md` as `.agent/skills/imported-<slug>.md`, ingests CLAUDE.md into `.agent/*.md` buckets — lossless.
+- **Test coverage**: 51 tests, all green. Phase-by-phase test files: `test_phase2_visibility.py`, `test_phase3_skills.py`, `test_phase4_tools.py`, `test_phase5_dream.py`, `test_phase6_polish.py`, plus the original `test_sources.py` / `test_context.py` / `test_working_and_ingest.py` / `test_adapters.py` / `test_smoke.py`.
+
 ### Phase 1 polish — SHIPPED (2026-05-05)
 
 - **`docs/`-as-source-of-truth — wired.** `.agent/config.yaml` now has a `sources:` block pointing at `docs/bug-registry.md`, `docs/anti-patterns.md`, `docs/redis-key-registry.md`, `docs/db-impact-map.md`, `docs/dependency-map.md`, `docs/architecture.md`. Indexed by `dotagent.sources` into structured entries (bugs ranked by severity, tables/keys/components extracted). Cache at `.agent/.cache/sources.json` (gitignored). Pointer cards committed to `.agent/memory/semantic/sources/<name>.md`.

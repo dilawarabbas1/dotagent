@@ -2,6 +2,7 @@ from .base import Adapter, RenderedFile, read_source
 from .claude import ClaudeAdapter
 from .copilot import CopilotAdapter
 from .cursor import CursorAdapter
+from .custom import CustomAdapter
 from .opencode import OpenCodeAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
@@ -9,6 +10,7 @@ REGISTRY: dict[str, type[Adapter]] = {
     "cursor": CursorAdapter,
     "copilot": CopilotAdapter,
     "opencode": OpenCodeAdapter,
+    "custom": CustomAdapter,
 }
 
 
@@ -23,6 +25,7 @@ __all__ = [
     "ClaudeAdapter",
     "CopilotAdapter",
     "CursorAdapter",
+    "CustomAdapter",
     "OpenCodeAdapter",
     "REGISTRY",
     "RenderedFile",
