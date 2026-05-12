@@ -44,8 +44,9 @@ class EpisodicMemory:
         try:
             from .. import episodic_index
             episodic_index.append(self.paths, asdict(event), str(path))
-        except Exception:
-            pass
+        except Exception as e:
+            from ..logging import log_exception
+            log_exception("episodic SQLite index append failed", e)
         return path
 
     def iter_events(self):

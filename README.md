@@ -1,64 +1,275 @@
 # dotagent
 
-Tool-agnostic AI coding context manager. One `.agent/` folder, every AI coding tool in sync.
+> **One `.agent/` folder. Every AI coding tool in sync.**
+> Bug registry, anti-patterns, DB hotspots, Redis keys, dependency map — every AI
+> agent on your team reads the same canonical context, ranked by severity, every
+> session, automatically.
 
-Manages a single source of truth (`.agent/`) and generates the right config for Claude Code, Cursor, GitHub Copilot, OpenCode, and custom tools — so your project's coding rules, architecture, patterns, and team memory follow you everywhere.
+[![ci](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml/badge.svg)](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml)
+&nbsp;
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+&nbsp;
+Python 3.11+
 
-## Quickstart (plug-and-play)
+---
+
+## Why
+
+Every AI coding agent — Claude Code, Cursor, GitHub Copilot, OpenCode — reads
+its own config file (CLAUDE.md, .cursorrules, .github/copilot-instructions.md,
+AGENTS.md). You end up maintaining the same project context in four places,
+or worse, you don't, and your agents work cold every session.
+
+dotagent fixes that. Your `docs/` directory is the single source of truth.
+dotagent indexes it, merges with four kinds of memory (working / episodic /
+semantic / personal), and renders the right config for every tool. Edit one
+file in `docs/`, run `dotagent sync`, every agent across every dev's machine
+picks it up.
+
+It's also a multi-developer + multi-AI-tool attribution system: every Edit,
+Save, and commit is recorded with `actor` (the human) and `tool` (the AI)
+fields. `dotagent who --file path/to/file` tells you which teammate touched
+it with which AI agent.
+
+---
+
+## Quickstart — 30 seconds
 
 ```bash
-pipx install dotagent
-
+pipx install "git+https://github.com/dilawarabbas1/dotagent"
 cd ~/code/your-repo
-dotagent init       # zero-prompt: scans, drafts, scaffolds .agent/, generates adapters, installs hooks
-git add .agent/ CLAUDE.md .cursorrules .github/copilot-instructions.md AGENTS.md
-git commit -m "chore: add dotagent context"
-git push
+dotagent init               # zero prompts; scans, scaffolds .agent/, indexes docs/, renders CLAUDE.md
+dotagent doctor             # self-check
 ```
 
-**Teammates** (each, once):
+Open Claude Code (or Cursor, or VS Code with Copilot) in that repo. The
+generated `CLAUDE.md` (or `.cursorrules` / `.github/copilot-instructions.md`)
+now contains:
+
+- Top-N bugs from `docs/bug-registry.md`, severity-ranked
+- Anti-patterns to avoid
+- Database tables/columns to handle with care
+- Redis key conventions
+- Service dependency map
+- Architecture section index
+- Your personal style preferences (never leaks to teammates)
+- Current branch + recent files you've touched
+- Recent team activity filtered to those files
+- A footer pointing back to every `docs/*.md` source
+
+When you commit, the install hook adds a
+`Co-authored-by: dotagent <... actor=alice tool=claude_code>` trailer.
+Attribution survives in `git log` even on machines without dotagent.
+
+---
+
+## What you actually edit
+
+dotagent is opinionated about *one* thing: **`docs/` is the source of truth**.
+It never writes there. The hierarchy:
+
+```
+your-repo/
+├── docs/                            ← YOU edit these. dotagent indexes.
+│   ├── bug-registry.md
+│   ├── anti-patterns.md
+│   ├── redis-key-registry.md
+│   ├── db-impact-map.md
+│   ├── dependency-map.md
+│   └── architecture.md
+└── .agent/                          ← dotagent generates / manages
+    ├── config.yaml                  ← points at docs/ files above
+    ├── style.md rules.md ...        ← five project-wide source files
+    ├── memory/                      ← four memories (see below)
+    ├── skills/ tools/               ← prompts the AI runtime uses
+    └── .cache/                      ← gitignored; regenerated on sync
+```
+
+Plus what dotagent emits for each AI tool:
+
+```
+your-repo/
+├── CLAUDE.md                            ← Claude Code reads this
+├── .cursorrules                         ← Cursor reads this
+├── .github/copilot-instructions.md      ← GitHub Copilot reads this
+└── AGENTS.md                            ← OpenCode reads this
+```
+
+Don't hand-edit those four — they're regenerated. Edit `docs/*.md` or
+`.agent/*.md` and run `dotagent sync`.
+
+See [`examples/`](examples/) for a working sample of the `docs/` format.
+
+---
+
+## The four memories
+
+| Memory | When | Stored at | Shared? |
+|---|---|---|---|
+| **Working** | now (current session) | `.agent/memory/working/<actor>/current.json` | local only |
+| **Episodic** | before (every event) | `.agent/memory/episodic/YYYY/MM/DD/<actor>__<session>.jsonl` | committed (zero merge conflicts by design) |
+| **Semantic** | patterns & rules | `.agent/memory/semantic/{rules,patterns}/.../<sha>-<slug>.md` | committed (content-hashed slugs prevent collisions) |
+| **Personal** | per-actor style | `.agent/memory/personal/<actor>/profile.yaml` | per-actor, **never merged into other devs' generated configs** |
+
+Every recorded event has `actor`, `tool`, `host`, `session` fields. Two
+teammates can write to the same file on the same day without conflicts
+because filenames namespace by actor + session.
+
+---
+
+## Day-to-day commands
 
 ```bash
-pipx install dotagent
-git pull
-dotagent sync       # rebuilds adapters locally + installs hooks; identity comes from `git config user.email`
+# core
+dotagent status                       # what dotagent knows about this repo
+dotagent context                      # exactly what an AI agent sees
+dotagent context --format markdown    # full body, for piping/inspection
+dotagent sync                         # rebuild adapters from docs/ + .agent/
+dotagent sync --dry-run               # unified diff of what would change
+dotagent doctor                       # self-check; nonzero exit on fail
+
+# visibility (Phase 2)
+dotagent who --file path/to/file.py   # which devs / AI tools touched it
+dotagent timeline path/to/file.py     # edit history
+dotagent activity --since 7d --by alice --tool claude_code
+dotagent feed --limit 50              # team-wide stream
+dotagent leaderboard --since 30d
+
+# tools (Phase 4)
+dotagent tool debug "<stack trace>"   # match against bugs + past failures
+dotagent tool checklist --since 14d   # pre-deploy gate
+dotagent tool memory "BUG-001"        # search the four memories
+dotagent tool pattern-extractor --write
+
+# skills (Phase 3) — needs ANTHROPIC_API_KEY for real runs
+dotagent skill list
+dotagent skill run plan --task "ship JWT rotation"
+dotagent skill pipeline observer plan code review --task "ship X"
+
+# auto-dream (Phase 5)
+dotagent dream run --since 30d        # extract signals → candidates
+dotagent dream list                   # pending candidates
+dotagent dream graduate <id> --rationale "..."   # rationale REQUIRED
+dotagent dream reject   <id> --rationale "..."   # rationale REQUIRED
+dotagent dream cron-install           # daily 02:00 UTC
+dotagent dream github-action          # write nightly PR workflow
+
+# bridging tools without native hooks
+dotagent watch cursor                 # foreground watcher (Cursor < 0.40)
+dotagent serve --host 0.0.0.0 --port 9700   # team event server
 ```
 
-That's the entire onboarding.
+---
 
-## What's in `.agent/`
+## How dotagent compares
 
-| Path | Purpose |
-| --- | --- |
-| `style.md` `rules.md` `architecture.md` `patterns.md` `preferences.md` | Source markdown — edit, run `dotagent sync`, all adapters update. |
-| `identity/developers.yaml`        | Roster of developers (id, emails, default tool). |
-| `memory/working/<actor>/`         | Session state (local). |
-| `memory/episodic/`                | Append-only event log per actor — committed, attributable. |
-| `memory/semantic/`                | Graduated patterns + rules — the team's permanent learning. |
-| `memory/personal/<actor>/`        | Per-developer style + vetoes — never sent into other people's adapters. |
-| `dream/`                          | Auto-Dream candidates / graduated / rejected — every decision carries a written rationale. |
-| `adapters/`                       | Generated tool configs (don't hand-edit). |
-| `skills/` `tools/`                | Built-in skill prompts and tool contracts. |
+|                                   | Claude `CLAUDE.md` | Cursor Rules | Copilot custom instr. | dotagent |
+|-----------------------------------|--------------------|--------------|------------------------|----------|
+| One file per tool                 | yes                | yes          | yes                    | **one source, every tool** |
+| Reads your `docs/`                | no                 | no           | no                     | **yes (configurable)** |
+| Embeds bug registry / anti-patterns | manual           | manual       | manual                 | **automatic, severity-ranked** |
+| Per-developer personalization     | no                 | no           | no                     | **per-actor profile** |
+| Attribution surviving in git log  | no                 | no           | no                     | **`Co-authored-by` trailer** |
+| Stack-trace → past failures lookup | no                | no           | no                     | **`dotagent tool debug`** |
+| Auto-learn from team experience   | no                 | no           | no                     | **Auto-Dream with mandatory rationale** |
 
-## Built-in commands (Phase 1)
+---
+
+## Migrating an existing Claude-Code-Optimization repo
+
+If your project already has `docs/bug-registry.md`, `docs/anti-patterns.md`,
+`prompts/*.md`, and `.claude/hooks/*.sh`:
+
+```bash
+cd ~/code/your-cco-project
+pipx install "git+https://github.com/dilawarabbas1/dotagent"
+dotagent init --no-llm
+dotagent migrate-cco       # wires docs/ as sources, imports prompts/ → .agent/skills/
+dotagent sync
+```
+
+Nothing under `docs/` is copied. `prompts/*.md` become
+`.agent/skills/imported-<slug>.md`. Your existing `CLAUDE.md` content gets
+parsed and routed into `.agent/{style,rules,architecture,patterns,preferences}.md`
+so hand-written copy survives.
+
+---
+
+## Optional extras
+
+```bash
+pip install 'dotagent[ml]'         # sentence-transformers + sklearn → semantic clustering for Auto-Dream
+pip install 'dotagent[server]'     # FastAPI + uvicorn → `dotagent serve`
+pip install 'dotagent[watch]'      # watchdog → `dotagent watch cursor`
+pip install 'dotagent[all]'        # everything above
+```
+
+The base install stays small (~5 MB; click + PyYAML + Jinja2 + anthropic).
+Extras only pull in their deps when needed.
+
+---
+
+## Architecture in one diagram
 
 ```
-dotagent init             # one-shot setup; --interactive for the question flow
-dotagent sync             # regenerate adapters + install hooks
-dotagent identity show    # who am I
-dotagent identity set     # save your identity globally
-dotagent observe <kind>   # append an event (used by hooks)
-dotagent status           # summary
+docs/*.md  ─────────────────────┐
+(your hand-written truth)       │
+                                ▼
+            ┌─────────────────────────────────┐
+            │   Source Indexer (sources.py)   │
+            └─────────────┬───────────────────┘
+                          │ structured entries
+                          ▼
+.agent/*.md ──┐  ┌───────────────────┐  ┌── memory/working   (now)
+              ├─▶│  Context Resolver │◀─┼── memory/episodic  (before)
+config.yaml ──┘  │   (context.py)    │  ├── memory/semantic  (patterns + indexed sources)
+                 └─────────┬─────────┘  └── memory/personal  (per-actor)
+                           │ merged Context object
+                           ▼
+                ┌──────────────────────┐
+                │  Adapters (render)   │
+                │  CLAUDE.md, .cursor- │
+                │  rules, copilot, ... │
+                └──────────┬───────────┘
+                           ▼
+       AI agent reads CLAUDE.md and gets the full context.
 ```
 
-Phase 2+: `dotagent skill run`, `dotagent dream`, `dotagent who`, `dotagent activity`, `dotagent leaderboard`, `dotagent timeline`.
+---
 
-## Multi-developer + multi-AI-tool tracking
+## Documentation
 
-Every event records `actor` (the human, resolved from `git config user.email` via the alias map in `identity/developers.yaml`) and `tool` (the AI platform driving the work — `claude_code | cursor | copilot | opencode | custom | cli`). Episodic JSONL files use `<actor>__<session>.jsonl` filenames so merges never conflict. Semantic memory files use content-hashed slugs so collisions are impossible. Personal memory is per-actor and never merged.
+- [`USING_WITH_CLAUDE_CODE.md`](USING_WITH_CLAUDE_CODE.md) — practical guide
+- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — architecture decisions + roadmap state
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed when
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
+- [`examples/`](examples/) — sample `docs/*.md` showing the expected format
 
-Git Proxy adds a `Co-authored-by: dotagent <tool=claude_code,actor=alice>` trailer on commits so attribution survives in `git log` even without `dotagent` installed.
+---
+
+## Troubleshooting
+
+```bash
+dotagent doctor                  # first line of defense — covers 90% of issues
+DOTAGENT_DEBUG=1 dotagent sync   # surface silenced exceptions to stderr
+```
+
+Common failure modes and fixes are in
+[`USING_WITH_CLAUDE_CODE.md#quick-troubleshooting`](USING_WITH_CLAUDE_CODE.md#quick-troubleshooting).
+
+---
+
+## Status
+
+**v0.2.0 — launch-ready.** 65+ tests across 11 phases. Used internally on
+production repos. Not yet on PyPI (`pipx install` via git URL); not yet on
+the VS Code Marketplace (build the `.vsix` from `extensions/vscode-copilot/`).
+Both are convenience-only and don't block use.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
+
+---
 
 ## License
 
-MIT
+MIT. See [`LICENSE`](LICENSE).

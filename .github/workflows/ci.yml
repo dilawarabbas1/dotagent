@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    name: tests / py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          # core + server extras so the server route tests run
+          pip install -e '.[dev,server]'
+      - name: Lint
+        run: ruff check src tests
+      - name: Tests
+        run: pytest tests/ -q
+
+  doctor-smoke:
+    name: doctor / py3.11 / fresh repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -e '.'
+      - run: |
+          mkdir /tmp/sample && cd /tmp/sample
+          git init -q
+          git config user.email ci@example.com
+          git config user.name CI
+          git commit --allow-empty -m init -q
+          dotagent init --no-llm
+          dotagent doctor
+          dotagent context --format summary

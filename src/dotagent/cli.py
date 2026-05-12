@@ -3,6 +3,7 @@ from __future__ import annotations
 import click
 
 from .commands.context_cmd import context
+from .commands.doctor_cmd import doctor
 from .commands.dream_cmd import dream_group
 from .commands.identity_cmd import identity_set, identity_show
 from .commands.init_cmd import init
@@ -48,6 +49,7 @@ main.add_command(observe)
 main.add_command(reindex)
 main.add_command(context)
 main.add_command(trailer)
+main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
 
 # Phase 2: visibility

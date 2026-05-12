@@ -3,6 +3,7 @@ from __future__ import annotations
 import click
 
 from ..identity import host, new_session_id, resolve
+from ..logging import log_exception
 from ..memory import EpisodicEvent, EpisodicMemory, WorkingMemory
 from ..paths import Paths, find_repo_root
 from ..util import run
@@ -56,8 +57,8 @@ def observe(kind, tool, summary, files, sha, session) -> None:
                 cfg.raw.get("sources") or {},
                 embed_full_docs=bool((cfg.raw.get("context") or {}).get("embed_full_docs")),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log_exception("docs reindex on observe failed", e)
 
     try:
         from dataclasses import asdict as _asdict
@@ -67,8 +68,8 @@ def observe(kind, tool, summary, files, sha, session) -> None:
         server_cfg = cfg.raw.get("server") or {}
         if server_cfg.get("forward_events") and server_cfg.get("url"):
             _forward_to_server(server_cfg, _asdict(event))
-    except Exception:
-        pass
+    except Exception as e:
+        log_exception("server forward on observe failed", e)
 
 
 def _forward_to_server(server_cfg: dict, payload: dict) -> None:
