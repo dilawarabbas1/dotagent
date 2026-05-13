@@ -10,6 +10,7 @@ from .commands.init_cmd import init
 from .commands.migrate_cmd import migrate_cco
 from .commands.observe_cmd import observe
 from .commands.reindex_cmd import reindex
+from .commands.restore_cmd import restore_original
 from .commands.serve_cmd import serve
 from .commands.skill_cmd import skill_group
 from .commands.status_cmd import status
@@ -51,6 +52,7 @@ main.add_command(context)
 main.add_command(trailer)
 main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
+main.add_command(restore_original)
 
 # Phase 2: visibility
 main.add_command(who)

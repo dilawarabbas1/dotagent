@@ -109,6 +109,11 @@ class Paths:
     def cache_gitignore(self) -> Path:
         return self.cache / ".gitignore"
 
+    @property
+    def imported(self) -> Path:
+        """Directory where pre-existing AI-tool configs are backed up before overwrite."""
+        return self.agent / ".imported"
+
 
 def find_repo_root(start: Path | None = None) -> Path:
     """Walk up until we hit a git repo or an existing .agent/. Default cwd."""
