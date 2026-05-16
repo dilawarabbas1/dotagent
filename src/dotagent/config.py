@@ -30,6 +30,16 @@ DEFAULT_CONFIG: dict = {
         "recent_activity_top_n": 8,
         "embed_full_docs": False,
     },
+    "project": {
+        "enabled": True,
+        "tools": {
+            "development": {"tool": "claude_code", "model": ""},
+            "qa":          {"tool": "claude_code", "model": ""},
+            "review":      {"tool": "claude_code", "model": ""},
+            "planning":    {"tool": "claude_code", "model": ""},
+        },
+        "max_cycles_warning": 5,
+    },
     "server": {
         "url": "",
         "token": "",

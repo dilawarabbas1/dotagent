@@ -9,6 +9,7 @@ from .commands.identity_cmd import identity_set, identity_show
 from .commands.init_cmd import init
 from .commands.migrate_cmd import migrate_cco
 from .commands.observe_cmd import observe
+from .commands.project_cmd import project_group
 from .commands.reindex_cmd import reindex
 from .commands.restore_cmd import restore_original
 from .commands.serve_cmd import serve
@@ -70,6 +71,9 @@ main.add_command(tool_group)
 
 # Phase 5: dream
 main.add_command(dream_group)
+
+# Phase 8: project management
+main.add_command(project_group)
 
 # Beyond Phase 6: watcher + server
 main.add_command(watch_group)
