@@ -3,7 +3,8 @@
 > **One `.agent/` folder. Every AI coding tool in sync.**
 > Bug registry, anti-patterns, DB hotspots, Redis keys, dependency map — every AI
 > agent on your team reads the same canonical context, ranked by severity, every
-> session, automatically.
+> session, automatically. Plus a built-in project-management layer that tracks
+> modules through a dev ↔ QA cycle with mandatory rationale on every decision.
 
 [![ci](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml/badge.svg)](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml)
 &nbsp;
@@ -30,6 +31,10 @@ It's also a multi-developer + multi-AI-tool attribution system: every Edit,
 Save, and commit is recorded with `actor` (the human) and `tool` (the AI)
 fields. `dotagent who --file path/to/file` tells you which teammate touched
 it with which AI agent.
+
+And it's a project manager: define modules through an interactive Q&A,
+track them through a dev → QA cycle where documents wire the handoff in
+both directions, and ship only when QA passes with a written rationale.
 
 ---
 
@@ -157,7 +162,66 @@ dotagent dream github-action          # write nightly PR workflow
 # bridging tools without native hooks
 dotagent watch cursor                 # foreground watcher (Cursor < 0.40)
 dotagent serve --host 0.0.0.0 --port 9700   # team event server
+
+# project management (Phase 8)
+dotagent project init                          # interactive scope-builder Q&A
+dotagent project add-module "<name>"           # per-module Q&A with vagueness probes
+dotagent project status                        # source-of-truth completion %
+dotagent project start <id>                    # open a dev cycle
+dotagent project handoff <id>                  # writes the QA handoff doc
+dotagent project qa-record <id> --result pass|fail --rationale "..."  # rationale REQUIRED
+dotagent project resolve <id>                  # ship after qa_passed
+dotagent project next                          # dep-aware "what's next"
 ```
+
+---
+
+## Project management — track modules end-to-end
+
+Big projects break down into modules. dotagent's `project` layer builds an
+extensive per-module plan via interactive Q&A, then tracks each module
+through a dev ↔ QA cycle until ship.
+
+The trick: **documents wire the handoff in both directions.**
+
+```
+1. dotagent project add-module "Auth"          → interactive Q&A builds PLAN.md
+2. dotagent project start 01-auth              → cycle 1 opens
+3. ... dev work ...
+4. dotagent project handoff 01-auth            → writes cycles/01/dev-handoff.md
+                                                 (QA tool reads this)
+5. dotagent project qa-record 01-auth          → if FAIL: writes qa-findings.md
+        --result fail --rationale "..."          (dev tool reads this next round)
+6. dotagent project start 01-auth              → cycle 2 opens automatically
+7. ... dev fixes ...
+8. dotagent project handoff 01-auth            → cycles/02/dev-handoff.md
+9. dotagent project qa-record --result pass --rationale "..."
+10. dotagent project resolve 01-auth           → SHIPPED; completion.md written
+```
+
+Whichever tool you open (Claude Code, Codex, Cursor, ...) the rendered
+`CLAUDE.md` automatically points at the right document for the current
+state — `PLAN.md` while developing, `qa-findings.md` after a fail,
+`dev-handoff.md` when the QA tool is up. **No context loss between rounds.**
+
+Rationale on `qa-record` is mandatory (the audit of what passed and why).
+The scope-builder also detects vague answers and probes for specifics
+(hedge words like *maybe*, vague quantifiers like *fast* without numbers).
+
+`dotagent project status` aggregates module states across the project:
+
+```
+$ dotagent project status
+project:  TestPortal
+modules:  2/3 shipped  (67% complete)
+  shipped:        01-config, 02-auth
+  in_progress:    03-payments
+  planned:        04-notifications
+```
+
+That's the source of truth. See the wiki page
+[**Project Management**](https://github.com/dilawarabbas1/dotagent/wiki/Project-Management)
+for the full workflow.
 
 ---
 
@@ -172,6 +236,7 @@ dotagent serve --host 0.0.0.0 --port 9700   # team event server
 | Attribution surviving in git log  | no                 | no           | no                     | **`Co-authored-by` trailer** |
 | Stack-trace → past failures lookup | no                | no           | no                     | **`dotagent tool debug`** |
 | Auto-learn from team experience   | no                 | no           | no                     | **Auto-Dream with mandatory rationale** |
+| Track modules through dev ↔ QA cycle | no              | no           | no                     | **`dotagent project` with mandatory QA rationale** |
 
 ---
 
@@ -244,6 +309,7 @@ config.yaml ──┘  │   (context.py)    │  ├── memory/semantic  (pa
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed when
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`examples/`](examples/) — sample `docs/*.md` showing the expected format
+- **[Wiki](https://github.com/dilawarabbas1/dotagent/wiki)** — Getting Started, Architecture, Memory Model, Sources & Docs, Auto-Dream, Project Management, Server & RBAC, Multi-Project & Multi-Developer, Migrating from CCO, Troubleshooting, FAQ
 
 ---
 
@@ -261,10 +327,12 @@ Common failure modes and fixes are in
 
 ## Status
 
-**v0.2.0 — launch-ready.** 65+ tests across 11 phases. Used internally on
-production repos. Not yet on PyPI (`pipx install` via git URL); not yet on
-the VS Code Marketplace (build the `.vsix` from `extensions/vscode-copilot/`).
-Both are convenience-only and don't block use.
+**v0.2.0 — launch-ready** with project management. 102 tests passing across
+all phases. Live-tested end-to-end (interactive Q&A, real git diff, full
+dev↔QA cycle, multi-module dep resolution, backup/restore, server over HTTP).
+Not yet on PyPI (install via git URL works); not yet on the VS Code
+Marketplace (build the `.vsix` from `extensions/vscode-copilot/`). Both are
+convenience-only and don't block use.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
 
