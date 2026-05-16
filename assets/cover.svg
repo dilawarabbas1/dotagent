@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#1A2030" stroke-width="1"/>
+    </pattern>
+    <radialGradient id="spotlight" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#13182A" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#0B0F1A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="cardGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1920" height="1080" fill="#0B0F1A"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  <rect width="1920" height="1080" fill="url(#spotlight)"/>
+
+  <!-- top accent bar -->
+  <rect x="0" y="0" width="1920" height="6" fill="#06B6D4"/>
+
+  <!-- title -->
+  <text x="960" y="180"
+        font-family="Helvetica, Arial, sans-serif"
+        font-size="124" font-weight="800" fill="#FFFFFF"
+        text-anchor="middle" letter-spacing="-3">dotagent</text>
+
+  <!-- tagline -->
+  <text x="960" y="246"
+        font-family="Helvetica, Arial, sans-serif"
+        font-size="36" font-weight="400" fill="#9CA3AF"
+        text-anchor="middle">One source of truth. Every AI coding tool in sync.</text>
+
+  <!-- section label -->
+  <line x1="690" y1="345" x2="800" y2="345" stroke="#06B6D4" stroke-width="2"/>
+  <text x="960" y="354"
+        font-family="Menlo, Consolas, monospace"
+        font-size="22" font-weight="700" fill="#06B6D4"
+        text-anchor="middle" letter-spacing="4">THE FOUR MEMORIES</text>
+  <line x1="1120" y1="345" x2="1230" y2="345" stroke="#06B6D4" stroke-width="2"/>
+
+  <!-- ============ CARD 1: WORKING ============ -->
+  <g transform="translate(125, 430)" filter="url(#cardGlow)">
+    <rect width="380" height="430" rx="18" fill="#141A2B" stroke="#3B82F6" stroke-width="2" opacity="0.95"/>
+    <rect width="380" height="8" rx="4" fill="#3B82F6"/>
+    <!-- icon: pulse/radar "now" -->
+    <circle cx="190" cy="115" r="48" fill="#3B82F6" opacity="0.10"/>
+    <circle cx="190" cy="115" r="32" fill="none" stroke="#3B82F6" stroke-width="2" opacity="0.6"/>
+    <circle cx="190" cy="115" r="20" fill="none" stroke="#3B82F6" stroke-width="2" opacity="0.85"/>
+    <circle cx="190" cy="115" r="8"  fill="#3B82F6"/>
+    <text x="190" y="210"
+          font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700"
+          fill="#FFFFFF" text-anchor="middle">Working</text>
+    <text x="190" y="245"
+          font-family="Menlo, Consolas, monospace" font-size="17" fill="#3B82F6"
+          text-anchor="middle">// what's now</text>
+    <text x="190" y="305" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Current branch.</text>
+    <text x="190" y="335" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Recent files.</text>
+    <text x="190" y="365" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Active task.</text>
+    <text x="190" y="400" font-family="Helvetica, Arial, sans-serif" font-size="18"
+          font-style="italic" fill="#9CA3AF" text-anchor="middle">Never starts cold.</text>
+  </g>
+
+  <!-- ============ CARD 2: EPISODIC ============ -->
+  <g transform="translate(555, 430)" filter="url(#cardGlow)">
+    <rect width="380" height="430" rx="18" fill="#141A2B" stroke="#A855F7" stroke-width="2" opacity="0.95"/>
+    <rect width="380" height="8" rx="4" fill="#A855F7"/>
+    <!-- icon: log/stack -->
+    <circle cx="190" cy="115" r="48" fill="#A855F7" opacity="0.10"/>
+    <rect x="156" y="92"  width="68" height="8" rx="4" fill="#A855F7"/>
+    <rect x="156" y="110" width="56" height="8" rx="4" fill="#A855F7" opacity="0.75"/>
+    <rect x="156" y="128" width="68" height="8" rx="4" fill="#A855F7" opacity="0.55"/>
+    <rect x="156" y="146" width="40" height="8" rx="4" fill="#A855F7" opacity="0.35"/>
+    <text x="190" y="210"
+          font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700"
+          fill="#FFFFFF" text-anchor="middle">Episodic</text>
+    <text x="190" y="245"
+          font-family="Menlo, Consolas, monospace" font-size="17" fill="#A855F7"
+          text-anchor="middle">// what happened</text>
+    <text x="190" y="305" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Every edit, save,</text>
+    <text x="190" y="335" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">commit. Attributed</text>
+    <text x="190" y="365" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">to human + AI tool.</text>
+    <text x="190" y="400" font-family="Helvetica, Arial, sans-serif" font-size="18"
+          font-style="italic" fill="#9CA3AF" text-anchor="middle">Zero merge conflicts.</text>
+  </g>
+
+  <!-- ============ CARD 3: SEMANTIC ============ -->
+  <g transform="translate(985, 430)" filter="url(#cardGlow)">
+    <rect width="380" height="430" rx="18" fill="#141A2B" stroke="#10B981" stroke-width="2" opacity="0.95"/>
+    <rect width="380" height="8" rx="4" fill="#10B981"/>
+    <!-- icon: network / branching graph -->
+    <circle cx="190" cy="115" r="48" fill="#10B981" opacity="0.10"/>
+    <!-- root node -->
+    <circle cx="190" cy="88" r="10" fill="#10B981"/>
+    <!-- branch nodes -->
+    <circle cx="156" cy="138" r="8" fill="#10B981" opacity="0.85"/>
+    <circle cx="224" cy="138" r="8" fill="#10B981" opacity="0.85"/>
+    <circle cx="190" cy="155" r="6" fill="#10B981" opacity="0.65"/>
+    <!-- connecting lines -->
+    <line x1="190" y1="98"  x2="156" y2="130" stroke="#10B981" stroke-width="2" opacity="0.75"/>
+    <line x1="190" y1="98"  x2="224" y2="130" stroke="#10B981" stroke-width="2" opacity="0.75"/>
+    <line x1="190" y1="98"  x2="190" y2="149" stroke="#10B981" stroke-width="2" opacity="0.55"/>
+    <text x="190" y="210"
+          font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700"
+          fill="#FFFFFF" text-anchor="middle">Semantic</text>
+    <text x="190" y="245"
+          font-family="Menlo, Consolas, monospace" font-size="17" fill="#10B981"
+          text-anchor="middle">// patterns &amp; rules</text>
+    <text x="190" y="305" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Graduated from</text>
+    <text x="190" y="335" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">team experience.</text>
+    <text x="190" y="365" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Rationale required.</text>
+    <text x="190" y="400" font-family="Helvetica, Arial, sans-serif" font-size="18"
+          font-style="italic" fill="#9CA3AF" text-anchor="middle">The audit of learning.</text>
+  </g>
+
+  <!-- ============ CARD 4: PERSONAL ============ -->
+  <g transform="translate(1415, 430)" filter="url(#cardGlow)">
+    <rect width="380" height="430" rx="18" fill="#141A2B" stroke="#F59E0B" stroke-width="2" opacity="0.95"/>
+    <rect width="380" height="8" rx="4" fill="#F59E0B"/>
+    <!-- icon: person silhouette -->
+    <circle cx="190" cy="115" r="48" fill="#F59E0B" opacity="0.10"/>
+    <circle cx="190" cy="98"  r="16" fill="#F59E0B"/>
+    <path d="M 158 152 Q 158 124 190 124 Q 222 124 222 152 Z"
+          fill="#F59E0B"/>
+    <text x="190" y="210"
+          font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700"
+          fill="#FFFFFF" text-anchor="middle">Personal</text>
+    <text x="190" y="245"
+          font-family="Menlo, Consolas, monospace" font-size="17" fill="#F59E0B"
+          text-anchor="middle">// your style</text>
+    <text x="190" y="305" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Per-developer.</text>
+    <text x="190" y="335" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Your prefs stay yours.</text>
+    <text x="190" y="365" font-family="Helvetica, Arial, sans-serif" font-size="19"
+          fill="#E5E7EB" text-anchor="middle">Never leak to team.</text>
+    <text x="190" y="400" font-family="Helvetica, Arial, sans-serif" font-size="18"
+          font-style="italic" fill="#9CA3AF" text-anchor="middle">Same repo, your CLAUDE.md.</text>
+  </g>
+
+  <!-- bottom: command preview pill -->
+  <rect x="595" y="940" width="730" height="60" rx="30" fill="#141A2B" stroke="#06B6D4" stroke-width="1.5"/>
+  <text x="960" y="980"
+        font-family="Menlo, Consolas, monospace"
+        font-size="22" fill="#06B6D4"
+        text-anchor="middle">$ pipx install dotagent &amp;&amp; dotagent init</text>
+
+  <!-- footer line -->
+  <text x="960" y="1040"
+        font-family="Helvetica, Arial, sans-serif" font-size="20" fill="#6B7280"
+        text-anchor="middle">Open source · MIT · Built for Claude Code, Cursor, Copilot, OpenCode &amp; more — github.com/dilawarabbas1/dotagent</text>
+</svg>

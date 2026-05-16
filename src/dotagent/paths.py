@@ -109,6 +109,51 @@ class Paths:
     def cache_gitignore(self) -> Path:
         return self.cache / ".gitignore"
 
+    @property
+    def imported(self) -> Path:
+        """Directory where pre-existing AI-tool configs are backed up before overwrite."""
+        return self.agent / ".imported"
+
+    # ---- Project Management (Phase 8) -------------------------------------
+
+    @property
+    def project_dir(self) -> Path:
+        return self.agent / "project"
+
+    @property
+    def project_plan(self) -> Path:
+        return self.project_dir / "plan.yaml"
+
+    @property
+    def project_scope_md(self) -> Path:
+        return self.project_dir / "SCOPE.md"
+
+    @property
+    def project_tools(self) -> Path:
+        return self.project_dir / "tools.yaml"
+
+    @property
+    def project_modules(self) -> Path:
+        return self.project_dir / "modules"
+
+    def module_dir(self, module_id: str) -> Path:
+        return self.project_modules / module_id
+
+    def module_yaml(self, module_id: str) -> Path:
+        return self.module_dir(module_id) / "module.yaml"
+
+    def module_plan_md(self, module_id: str) -> Path:
+        return self.module_dir(module_id) / "PLAN.md"
+
+    def module_cycles(self, module_id: str) -> Path:
+        return self.module_dir(module_id) / "cycles"
+
+    def module_cycle_dir(self, module_id: str, cycle: int) -> Path:
+        return self.module_cycles(module_id) / f"{cycle:02d}"
+
+    def module_completion(self, module_id: str) -> Path:
+        return self.module_dir(module_id) / "completion.md"
+
 
 def find_repo_root(start: Path | None = None) -> Path:
     """Walk up until we hit a git repo or an existing .agent/. Default cwd."""

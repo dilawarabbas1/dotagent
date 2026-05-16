@@ -6,6 +6,7 @@ import click
 
 from ..adapters import REGISTRY as ADAPTER_REGISTRY
 from ..adapters import get as get_adapter
+from ..backup import backup_existing
 from ..config import Config, merge_defaults
 from ..context import build as build_context
 from ..discovery import discover
@@ -134,6 +135,14 @@ def init(interactive: bool, no_llm: bool, no_hooks: bool, no_ingest: bool, dry_r
     for name, src in sorted(idx.items()):
         flag = "ok" if src.exists else "missing"
         click.echo(f"    · {name:20s} {flag:8s}  {src.path}")
+
+    backups = backup_existing(paths)
+    written_backups = [b for b in backups if b.ok]
+    if written_backups:
+        click.echo(f"· backed up {len(written_backups)} existing AI-tool config(s) before overwrite:")
+        for b in written_backups:
+            click.echo(f"    · {b.source.relative_to(paths.repo)} → {b.backup.relative_to(paths.repo)}")
+        click.echo("  (restore any with `dotagent restore-original [--name claude|cursor|copilot|opencode]`)")
 
     click.echo("· phase 7: rendering adapters")
     ctx = build_context(paths, actor=identity.id, config=cfg)

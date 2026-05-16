@@ -25,6 +25,7 @@ def render_body(ctx: Context, *, tool_label: str = "AI coding agent") -> str:
     parts.append(f"# Project context for {tool_label} — `{ctx.project_name}`")
     parts.append("")
     parts.append(_render_overview(ctx))
+    parts.append(_render_project(ctx))
     parts.append(_render_rules(ctx))
     parts.append(_render_bug_registry(ctx))
     parts.append(_render_anti_patterns(ctx))
@@ -64,6 +65,97 @@ def _render_overview(ctx: Context) -> str:
         for s in missing:
             lines.append(f"  - `{s.path}`")
     return "\n".join(lines)
+
+
+def _render_project(ctx: Context) -> str:
+    """Phase 8: project management. Surfaces active module + the right doc per state."""
+    project = ctx.project_plan
+    if not project:
+        return ""
+    try:
+        from ..project.model import ModuleState
+    except ImportError:
+        return ""
+
+    lines = [f"## Project: `{project.name}`", ""]
+    if project.goal:
+        lines.append(f"_Goal:_ {project.goal}")
+        lines.append("")
+
+    shipped = [m.id for m in project.modules.values() if m.state == ModuleState.SHIPPED]
+    in_prog = [m.id for m in project.modules.values() if m.state == ModuleState.IN_PROGRESS]
+    devdone = [m.id for m in project.modules.values() if m.state == ModuleState.DEV_COMPLETE]
+    qapass = [m.id for m in project.modules.values() if m.state == ModuleState.QA_PASSED]
+    blocked = [m.id for m in project.modules.values() if m.state == ModuleState.BLOCKED]
+    planned = [m.id for m in project.modules.values() if m.state in (
+        ModuleState.PLANNED, ModuleState.DEFINED,
+    )]
+    total = len(project.modules) or 1
+    pct = (len(shipped) / total) * 100
+
+    lines.append(f"**Progress:** {len(shipped)}/{len(project.modules)} modules shipped ({pct:.0f}%)")
+    if shipped:
+        lines.append(f"- ★ shipped:      {', '.join(shipped)}")
+    if qapass:
+        lines.append(f"- ✓ qa_passed:    {', '.join(qapass)}")
+    if devdone:
+        lines.append(f"- ▸ dev_complete: {', '.join(devdone)}")
+    if in_prog:
+        lines.append(f"- ▶ in_progress:  {', '.join(in_prog)}")
+    if planned:
+        lines.append(f"- ○ planned:      {', '.join(planned)}")
+    if blocked:
+        lines.append(f"- ⊘ blocked:      {', '.join(blocked)}")
+
+    # Active module focus: surfaces the right document based on state.
+    mid = ctx.project_active_module_id
+    if mid and mid in project.modules:
+        mod = project.modules[mid]
+        lines.append("")
+        lines.append(f"### → Active module: `{mid}` ({mod.state})")
+        if mod.plan and mod.plan.purpose:
+            lines.append(f"_{mod.plan.purpose}_")
+        if mod.plan and mod.plan.acceptance_criteria:
+            lines.append("")
+            lines.append("**Acceptance criteria:**")
+            for c in mod.plan.acceptance_criteria[:8]:
+                lines.append(f"- [ ] {c}")
+            if len(mod.plan.acceptance_criteria) > 8:
+                lines.append(f"- _(+{len(mod.plan.acceptance_criteria) - 8} more — see `.agent/project/modules/{mid}/PLAN.md`)_")
+
+        doc_to_read = _active_doc_pointer(mid, mod)
+        if doc_to_read:
+            lines.append("")
+            lines.append(f"**Read next:** `{doc_to_read[0]}` — _{doc_to_read[1]}_")
+
+    return "\n".join(lines)
+
+
+def _active_doc_pointer(mid: str, mod) -> tuple[str, str] | None:
+    """Return (path, why) for the document the AI agent should read next based on state."""
+    try:
+        from ..project.model import ModuleState
+    except ImportError:
+        return None
+    base = f".agent/project/modules/{mid}"
+    if mod.state == ModuleState.IN_PROGRESS:
+        # if last cycle had qa-fail, point at the findings to address
+        last_qa = mod.last_qa_result
+        if last_qa and not last_qa.passed:
+            return (
+                f"{base}/cycles/{last_qa.cycle:02d}/qa-findings.md",
+                "QA findings from the previous cycle — address these, then `dotagent project handoff` again",
+            )
+        return (f"{base}/PLAN.md", "the module plan you're building against")
+    if mod.state == ModuleState.DEV_COMPLETE:
+        n = mod.current_cycle.n if mod.current_cycle else 1
+        return (
+            f"{base}/cycles/{n:02d}/dev-handoff.md",
+            "dev handoff awaiting QA — read this if you are the QA tool, follow the QA prompt at the bottom",
+        )
+    if mod.state == ModuleState.QA_PASSED:
+        return (f"{base}/PLAN.md", "QA passed — confirm acceptance criteria, then `dotagent project resolve`")
+    return (f"{base}/PLAN.md", "the module plan")
 
 
 def _render_rules(ctx: Context) -> str:

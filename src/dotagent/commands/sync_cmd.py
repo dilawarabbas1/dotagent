@@ -4,6 +4,7 @@ import click
 
 from ..adapters import REGISTRY as ADAPTER_REGISTRY
 from ..adapters import get as get_adapter
+from ..backup import backup_existing
 from ..config import Config
 from ..context import build as build_context
 from ..diff import diff_rendered, format_diff
@@ -37,6 +38,15 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool) -> None:
         click.echo(f"· reindexed {present}/{len(idx)} sources from docs/")
 
     ctx = build_context(paths, actor=identity.id, config=cfg)
+
+    if not dry_run:
+        backups = backup_existing(paths)
+        written_backups = [b for b in backups if b.ok]
+        if written_backups:
+            click.echo(f"· backed up {len(written_backups)} pre-existing config(s) before overwrite:")
+            for b in written_backups:
+                click.echo(f"    · {b.source.relative_to(paths.repo)} → {b.backup.relative_to(paths.repo)}")
+            click.echo("  (restore with `dotagent restore-original`)")
 
     all_files = []
     rendered = 0

@@ -45,6 +45,9 @@ class Context:
     current: CurrentState
     recent_episodic: list[dict]
     config_top_n: dict[str, int]
+    # Phase 8: project management
+    project_plan: object | None = None       # dotagent.project.Project | None
+    project_active_module_id: str = ""
 
     # ---- helpers for adapters ---------------------------------------------
 
@@ -149,6 +152,32 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
     n = (config.raw.get("context") or {}).get("recent_activity_top_n", 8) if config else 8
     recent = _recent_episodic(paths, actor, n, current.recent_files or None)
     top_n = dict((config.raw.get("context") or {})) if config else {}
+
+    # Phase 8: load project state if initialized
+    project_plan = None
+    active_mid = ""
+    try:
+        from .project import load_project
+        from .project.operations import next_recommended_module
+        project_plan = load_project(paths)
+        if project_plan:
+            # active = first in_progress/dev_complete/qa_passed, else recommended next
+            from .project.model import ModuleState
+            for mid in project_plan.module_ids:
+                m = project_plan.modules.get(mid)
+                if m and m.state in (
+                    ModuleState.IN_PROGRESS,
+                    ModuleState.DEV_COMPLETE,
+                    ModuleState.QA_PASSED,
+                ):
+                    active_mid = mid
+                    break
+            if not active_mid:
+                active_mid = next_recommended_module(project_plan) or ""
+    except Exception as e:
+        from .logging import log_exception
+        log_exception("project context load failed", e)
+
     return Context(
         project_name=project_name,
         actor=actor,
@@ -160,4 +189,6 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
         current=current,
         recent_episodic=recent,
         config_top_n=top_n,
+        project_plan=project_plan,
+        project_active_module_id=active_mid,
     )
