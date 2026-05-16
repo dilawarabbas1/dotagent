@@ -106,11 +106,18 @@ def ask(
     *,
     opts: AskOptions | None = None,
     asker: Callable[[str], str] | None = None,
+    notifier: Callable[[str], None] | None = None,
     llm: LLM | None = None,
 ) -> str | list[str]:
-    """Ask one question. `asker` is a function `(prompt) -> raw input string` so we can mock in tests."""
+    """Ask one question.
+
+    `asker(prompt) -> raw input` reads ONE answer from the user.
+    `notifier(msg) -> None`  emits a status/help line. Crucially, the notifier
+    must NOT consume input — otherwise status messages eat the next answer.
+    """
     opts = opts or AskOptions()
     asker = asker or _default_asker
+    notifier = notifier or _default_notifier
 
     while True:
         if opts.choices:
@@ -130,20 +137,26 @@ def ask(
             raw = opts.default
 
         if opts.list_:
+            # treat literal "none" / "(none)" / "n/a" / "-" as "no items"
+            if raw.strip().lower() in ("none", "(none)", "n/a", "-"):
+                if opts.required:
+                    notifier("(at least one item is required — try again)")
+                    continue
+                return []
             items = [line.strip(" -•\t") for line in re.split(r"[\n;]", raw) if line.strip(" -•\t")]
             if opts.required and not items:
-                asker("(at least one item is required — try again)\n")
+                notifier("(at least one item is required — try again)")
                 continue
             return items
 
         if opts.choices:
             if raw.lower() not in [c.lower() for c in opts.choices]:
-                asker(f"(must be one of: {', '.join(opts.choices)})\n")
+                notifier(f"(must be one of: {', '.join(opts.choices)})")
                 continue
             return raw.lower()
 
         if opts.required and not raw:
-            asker("(this field is required — try again)\n")
+            notifier("(this field is required — try again)")
             continue
 
         # vagueness check
@@ -152,11 +165,18 @@ def ask(
             llm_probe = llm_vagueness(llm, prompt, raw) if llm else None
             followup = llm_probe or heuristic
             if followup:
-                asker(f"→ {followup} (press Enter to accept your answer, or type a refinement)\n")
+                notifier(f"→ {followup} (press Enter to accept your answer, or type a refinement)")
                 refined = asker("> ").strip()
                 if refined:
                     raw = refined
         return raw
+
+
+def _default_notifier(msg: str) -> None:
+    """Emit a status/help line to stdout. Does NOT consume input."""
+    import sys
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
 
 
 def _default_asker(prompt: str) -> str:
@@ -172,38 +192,35 @@ def _default_asker(prompt: str) -> str:
 def build_project(
     *,
     asker: Callable[[str], str] | None = None,
+    notifier: Callable[[str], None] | None = None,
     llm: LLM | None = None,
 ) -> Project:
     """Run the project-level Q&A. Returns a populated Project (modules empty)."""
     if llm is None:
         llm = LLM()
+    kw = {"asker": asker, "notifier": notifier, "llm": llm}
 
-    name = ask("Project name (one short phrase)?", opts=AskOptions(vagueness_probes=False), asker=asker, llm=llm)
-    goal = ask("What is the goal of this project, in one sentence? What does success look like?",
-               asker=asker, llm=llm)
-    desc = ask("Describe the project in 2–4 sentences. What does it do, who is it for, why now?",
-               opts=AskOptions(multiline=True), asker=asker, llm=llm)
-    oos = ask("What is OUT of scope? (semicolon- or newline-separated; <EDITOR> opens $EDITOR)",
-              opts=AskOptions(list_=True, required=False, vagueness_probes=False),
-              asker=asker, llm=llm)
-    sc = ask("What does 'done' look like? Numbered or bulleted list of success criteria.",
-             opts=AskOptions(list_=True), asker=asker, llm=llm)
-    stakeholders = ask("Who are the users / stakeholders? (semicolon-separated)",
-                       opts=AskOptions(list_=True, required=False, vagueness_probes=False),
-                       asker=asker, llm=llm)
-    constraints = ask("Hard constraints? (timeline, budget, performance, security; semicolon-separated)",
-                      opts=AskOptions(list_=True, required=False), asker=asker, llm=llm)
+    name = ask("Project name (one short phrase)?", opts=AskOptions(vagueness_probes=False), **kw)
+    goal = ask("What is the goal of this project, in one sentence? What does success look like?", **kw)
+    desc = ask("Describe the project in 2–4 sentences. What does it do, who is it for, why now? "
+               "(<EDITOR> for multi-line)", opts=AskOptions(multiline=True), **kw)
+    oos = ask("Out of scope (semicolon-separated; 'none' for empty):",
+              opts=AskOptions(list_=True, required=False, vagueness_probes=False), **kw)
+    sc = ask("Success criteria (semicolon-separated, or <EDITOR> for one-per-line):",
+             opts=AskOptions(list_=True), **kw)
+    stakeholders = ask("Users / stakeholders (semicolon-separated; 'none' for empty):",
+                       opts=AskOptions(list_=True, required=False, vagueness_probes=False), **kw)
+    constraints = ask("Hard constraints (semicolon-separated; 'none' for empty):",
+                      opts=AskOptions(list_=True, required=False), **kw)
 
     dev_tool = ask("Which tool/agent runs DEVELOPMENT?",
-                   opts=AskOptions(choices=KNOWN_TOOLS, default="claude_code", vagueness_probes=False),
-                   asker=asker, llm=llm)
+                   opts=AskOptions(choices=KNOWN_TOOLS, default="claude_code", vagueness_probes=False), **kw)
     dev_model = ask("Which MODEL for development (blank = tool default)?",
-                    opts=AskOptions(required=False, vagueness_probes=False), asker=asker, llm=llm)
+                    opts=AskOptions(required=False, vagueness_probes=False), **kw)
     qa_tool = ask("Which tool/agent runs QA?",
-                  opts=AskOptions(choices=KNOWN_TOOLS, default="claude_code", vagueness_probes=False),
-                  asker=asker, llm=llm)
+                  opts=AskOptions(choices=KNOWN_TOOLS, default="claude_code", vagueness_probes=False), **kw)
     qa_model = ask("Which MODEL for QA (blank = tool default)?",
-                   opts=AskOptions(required=False, vagueness_probes=False), asker=asker, llm=llm)
+                   opts=AskOptions(required=False, vagueness_probes=False), **kw)
 
     from .model import now
     project = Project(
@@ -230,46 +247,32 @@ def build_module(
     project: Project,
     *,
     asker: Callable[[str], str] | None = None,
+    notifier: Callable[[str], None] | None = None,
     llm: LLM | None = None,
 ) -> ModulePlan:
     """Run the module-level Q&A. Returns a populated ModulePlan."""
     if llm is None:
         llm = LLM()
+    kw = {"asker": asker, "notifier": notifier, "llm": llm}
 
-    purpose = ask(
-        f"Module '{name}' — what does this module DO? One sentence.",
-        asker=asker, llm=llm,
-    )
-    in_scope = ask(
-        "What's IN scope for this module? (bulleted list; functional units)",
-        opts=AskOptions(list_=True), asker=asker, llm=llm,
-    )
-    out_of_scope = ask(
-        "What's explicitly OUT of scope for this module (to avoid creep)?",
-        opts=AskOptions(list_=True, required=False), asker=asker, llm=llm,
-    )
-    acceptance = ask(
-        "Acceptance criteria — concrete, testable, numbered (one per line):",
-        opts=AskOptions(list_=True), asker=asker, llm=llm,
-    )
+    purpose = ask(f"Module '{name}' — what does this module DO? One sentence.", **kw)
+    in_scope = ask("In scope (semicolon-separated; type 'none' for empty list):",
+                   opts=AskOptions(list_=True), **kw)
+    out_of_scope = ask("Out of scope (semicolon-separated; 'none' for empty):",
+                       opts=AskOptions(list_=True, required=False), **kw)
+    acceptance = ask("Acceptance criteria (semicolon-separated; or type <EDITOR> for one-per-line in $EDITOR):",
+                     opts=AskOptions(list_=True), **kw)
     existing_ids = ", ".join(project.module_ids) or "(none yet)"
     deps_raw = ask(
-        f"Does this module depend on other completed modules? (ids: {existing_ids}; semicolon-separated; blank = none)",
-        opts=AskOptions(list_=True, required=False, vagueness_probes=False),
-        asker=asker, llm=llm,
+        f"Depends on other modules? Existing ids: {existing_ids} — semicolon-separated, 'none' for empty:",
+        opts=AskOptions(list_=True, required=False, vagueness_probes=False), **kw,
     )
-    approach = ask(
-        "Technical approach — what is the plan? (free text; <EDITOR> for multi-line)",
-        opts=AskOptions(multiline=True), asker=asker, llm=llm,
-    )
-    risks = ask(
-        "Known risks / unknowns / open questions (semicolon-separated; blank = none)",
-        opts=AskOptions(list_=True, required=False), asker=asker, llm=llm,
-    )
-    effort = ask(
-        "Estimated effort (e.g., '2 days', '1 week') — blank for unknown",
-        opts=AskOptions(required=False, vagueness_probes=False), asker=asker, llm=llm,
-    )
+    approach = ask("Technical approach — what is the plan? (free text; <EDITOR> for multi-line)",
+                   opts=AskOptions(multiline=True), **kw)
+    risks = ask("Known risks / unknowns (semicolon-separated; 'none' for empty):",
+                opts=AskOptions(list_=True, required=False), **kw)
+    effort = ask("Estimated effort (e.g., '2 days', '1 week') — blank for unknown:",
+                 opts=AskOptions(required=False, vagueness_probes=False), **kw)
 
     return ModulePlan(
         purpose=purpose if isinstance(purpose, str) else " ".join(purpose),

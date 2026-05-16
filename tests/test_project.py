@@ -244,6 +244,24 @@ def test_detect_test_commands_excludes_docker(tmp_path: Path):
     assert not any("docker" in c.lower() for c in cmds)
 
 
+def test_files_changed_since_filters_internal_paths(tmp_path: Path):
+    """Regression: dev-handoff must not list .agent/, .git/, or generated adapter files."""
+    from dotagent.project.handoff import _is_internal
+    # internal state
+    assert _is_internal(".agent/memory/episodic/x.jsonl")
+    assert _is_internal(".agent/project/modules/01-x/module.yaml")
+    assert _is_internal(".git/HEAD")
+    # generated adapter outputs
+    assert _is_internal("CLAUDE.md")
+    assert _is_internal(".cursorrules")
+    assert _is_internal(".github/copilot-instructions.md")
+    assert _is_internal("AGENTS.md")
+    # real user code is not filtered
+    assert not _is_internal("services/auth/jwt.py")
+    assert not _is_internal("docs/bug-registry.md")
+    assert not _is_internal("README.md")
+
+
 def test_render_scope_lists_modules(tmp_path: Path):
     paths = _setup(tmp_path)
     project = _make_project()
@@ -368,7 +386,6 @@ def test_render_body_surfaces_handoff_when_dev_complete(tmp_path: Path):
 def test_build_project_with_mocked_asker(tmp_path: Path):
     from dotagent.project.scope_builder import build_project
 
-    # Each subsequent ask() call pops the next answer. Provide enough for the full flow.
     answers = iter([
         "Acme Portal",                                     # name
         "Ship a new self-serve portal users can access",   # goal
@@ -384,21 +401,56 @@ def test_build_project_with_mocked_asker(tmp_path: Path):
     ])
 
     def asker(prompt: str) -> str:
-        # Suppress vague-followup prompts — they have no "> " trailing in their format.
-        if "press Enter to accept" in prompt:
-            return ""
-        if prompt.strip() == ">":
-            return ""
         try:
             return next(answers)
         except StopIteration:
             return ""
 
-    project = build_project(asker=asker, llm=None)
+    notify_log: list[str] = []
+    project = build_project(asker=asker, notifier=notify_log.append, llm=None)
     assert project.name == "Acme Portal"
     assert "self-serve" in project.goal
     assert project.tools["development"]["tool"] == "claude_code"
     assert project.tools["qa"]["model"] == "claude-sonnet-4-6"
+
+
+def test_vagueness_probe_does_not_consume_input_line(tmp_path: Path):
+    """Regression: notifier(...) must NOT call asker(), otherwise status messages eat answers."""
+    from dotagent.project.scope_builder import AskOptions, ask
+
+    asker_calls: list[str] = []
+    answers = iter(["fast", "p95 < 200ms"])
+
+    def asker(prompt: str) -> str:
+        asker_calls.append(prompt)
+        try:
+            return next(answers)
+        except StopIteration:
+            raise AssertionError(
+                "asker called more than expected — notifier is consuming stdin"
+            )
+
+    notify_log: list[str] = []
+    result = ask(
+        "What is the performance target?",
+        opts=AskOptions(vagueness_probes=True),
+        asker=asker, notifier=notify_log.append, llm=None,
+    )
+    # The probe should fire AND the refinement should land as the final answer
+    assert result == "p95 < 200ms"
+    # Notifier saw a probe message (short-answer probe for 1-word answer "fast")
+    assert any(("measurable" in n) or ("short" in n) or ("expand" in n) for n in notify_log)
+    # asker was called exactly twice: original + refinement
+    assert len(asker_calls) == 2
+
+
+def test_list_question_accepts_literal_none_when_optional(tmp_path: Path):
+    from dotagent.project.scope_builder import AskOptions, ask
+    answers = iter(["(none)"])
+    def asker(_):  # noqa
+        return next(answers)
+    result = ask("Risks?", opts=AskOptions(list_=True, required=False), asker=asker, notifier=lambda _: None, llm=None)
+    assert result == []
 
 
 def test_scope_builder_vagueness_detects_hedge_words():

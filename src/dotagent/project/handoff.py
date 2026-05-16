@@ -45,14 +45,36 @@ def detect_test_commands(repo: Path) -> list[str]:
     return [c for c in cmds if "docker" not in c.lower()]
 
 
-def files_changed_since(repo: Path, since_sha: str) -> list[str]:
-    """Files changed in git since `since_sha`. Empty list if no git or sha missing."""
+# Paths under these prefixes (or matching these names) are dotagent's own
+# state or generated adapter outputs — side-effects of dotagent commands,
+# not user-authored code changes. Filter them so the QA tool sees only
+# what the dev actually wrote.
+_INTERNAL_PREFIXES = (".agent/", ".git/")
+_GENERATED_FILES = {
+    "CLAUDE.md",
+    ".cursorrules",
+    ".github/copilot-instructions.md",
+    "AGENTS.md",
+}
+
+
+def _is_internal(path: str) -> bool:
+    if any(path.startswith(p) for p in _INTERNAL_PREFIXES):
+        return True
+    return path in _GENERATED_FILES
+
+
+def files_changed_since(repo: Path, since_sha: str, *, include_internal: bool = False) -> list[str]:
+    """Files changed in git since `since_sha`. Filters dotagent/git internals by default."""
     if not since_sha:
         return []
     res = run(["git", "diff", "--name-only", since_sha], cwd=repo)
     if not res.ok:
         return []
-    return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    files = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    if include_internal:
+        return files
+    return [f for f in files if not _is_internal(f)]
 
 
 def current_sha(repo: Path) -> str:
