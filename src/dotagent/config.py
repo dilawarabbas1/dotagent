@@ -28,6 +28,7 @@ DEFAULT_CONFIG: dict = {
         "bug_registry_top_n": 15,
         "anti_patterns_top_n": 10,
         "recent_activity_top_n": 8,
+        "conflicts_top_n": 8,
         "embed_full_docs": False,
     },
     "project": {

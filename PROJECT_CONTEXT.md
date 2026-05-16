@@ -1,6 +1,6 @@
 # dotagent — project context
 
-Living context document. Read this before resuming work in a new session. Last updated: 2026-05-05.
+Living context document. Read this before resuming work in a new session. Last updated: 2026-05-16 (0.3.0 — conflict detection + rule lifecycle).
 
 ## What dotagent is
 

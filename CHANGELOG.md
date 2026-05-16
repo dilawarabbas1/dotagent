@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-05-16
+
+Two governance features shipped in response to LinkedIn feedback from
+Faisal Feroz on the four-memory article: "how do you handle conflicts
+when working memory contradicts what semantic memory says is the team
+standard" and "I would push you to also think about expiration and review
+cycles for those entries because team knowledge decays as the codebase
+evolves."
+
+### Added — Conflict Detection (Module 1)
+- `Context.detect_conflicts()` compares the active actor's
+  `current.recent_files` against bug-registry / anti-pattern entries
+  citing those files; returns severity-ranked rows.
+- New `⚠ Rule conflicts in active edits` section in every adapter output
+  (CLAUDE.md / .cursorrules / .github/copilot-instructions.md / AGENTS.md).
+  Suppressed when no conflicts exist — no noise.
+- Section placement: immediately after the Project section and *before*
+  the Rules section, so the warning is impossible to miss.
+- `context.conflicts_top_n` config knob (default 8).
+
+### Added — Rule Lifecycle (Module 2)
+- `SemanticEntry` gains `graduated_at`, `review_after`, `last_reviewed_at`,
+  `expired_at` fields. Persisted via a `<!-- dotagent-meta: -->` HTML
+  comment for clean round-trip without YAML frontmatter clutter.
+- Default rule lifetime: 180 days. Set explicitly via
+  `SemanticMemory.write(entry, lifetime_days=N)`.
+- `dotagent dream review-stale` lists rules that are overdue, due soon,
+  or whose cited files have churned since graduation.
+- `dotagent dream rerationale <rule-id> --rationale "..."` extends
+  `review_after`. Rationale is mandatory (`ValueError` on empty).
+- `dotagent dream expire-stale [--grace-period-days 30] [--dry-run]`
+  moves past-grace rules to `.agent/dream/expired/` (never deletes).
+  Expired rules carry an `expired_at` stamp and revival instructions.
+- New `⚠ Rule lifecycle` section in CLAUDE.md surfaces a count of
+  overdue / due-soon rules. Suppressed when none exist.
+- Backward compatibility: pre-Module-2 rules without metadata are
+  bucketed as legacy and treated as stale if their file mtime exceeds
+  the default lifetime.
+
+### Fixed
+- `SemanticMemory.read()` no longer nests rendered output back into
+  `entry.body`. Previously, a re-rationale cycle would carry the prior
+  rendered template (including stale meta comment) into the next write,
+  producing duplicated sections and incorrect lifecycle round-trips.
+- `_parse_meta()` now returns the LAST meta comment in a rule file, so
+  a re-rationale's updated metadata wins over earlier writes.
+- `lifecycle._aware()` normalizes parsed datetimes to UTC so date math
+  with `datetime.now(timezone.utc)` no longer raises on naive values.
+
+### Tests
+- 137/137 passing (113 baseline + 11 conflict + 13 lifecycle).
+- Coverage includes: defaults, custom lifetime, caller-supplied dates,
+  legacy round-trip, fresh / overdue / due-soon / cited-files-churned
+  buckets, rerationale rationale enforcement, extension semantics,
+  expire-stale move + dry-run + grace period, render-body surface +
+  suppression for both features.
+
 ## [0.2.0] — 2026-05-06
 
 First launch-ready release. Brings the walking-skeleton from 0.1.0 to a usable

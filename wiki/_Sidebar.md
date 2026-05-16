@@ -12,6 +12,7 @@
 ### Features
 - [[Project Management]]
 - [[Auto-Dream]]
+- [[Rule Lifecycle and Conflict Detection]]
 - [[Server and RBAC]]
 - [[Multi-Project and Multi-Developer]]
 

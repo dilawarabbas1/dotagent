@@ -26,6 +26,8 @@ def render_body(ctx: Context, *, tool_label: str = "AI coding agent") -> str:
     parts.append("")
     parts.append(_render_overview(ctx))
     parts.append(_render_project(ctx))
+    parts.append(_render_conflicts(ctx))
+    parts.append(_render_stale_rules_warning(ctx))
     parts.append(_render_rules(ctx))
     parts.append(_render_bug_registry(ctx))
     parts.append(_render_anti_patterns(ctx))
@@ -156,6 +158,86 @@ def _active_doc_pointer(mid: str, mod) -> tuple[str, str] | None:
     if mod.state == ModuleState.QA_PASSED:
         return (f"{base}/PLAN.md", "QA passed — confirm acceptance criteria, then `dotagent project resolve`")
     return (f"{base}/PLAN.md", "the module plan")
+
+
+def _render_conflicts(ctx: Context) -> str:
+    """Module 1: warn when active working-memory files overlap with rules citing them.
+
+    Section is suppressed entirely when there are no conflicts. This must not
+    add noise — it's only valuable when it has something to say.
+    """
+    rows = ctx.detect_conflicts()
+    if not rows:
+        return ""
+    lines = [
+        "## ⚠ Rule conflicts in active edits",
+        "",
+        "_The files you're currently editing are cited by these rules. "
+        "Review each before the next handoff — these are not informational; "
+        "they are constraints on the change you're making._",
+        "",
+    ]
+    sev_marker = {
+        "critical": "🔴 CRITICAL", "high": "🟠 HIGH",
+        "medium": "🟡 MEDIUM", "low": "⚪ LOW",
+        "p0": "🔴 P0", "p1": "🟠 P1", "p2": "🟡 P2", "p3": "⚪ P3",
+        "": "⚪ —", "unknown": "⚪ —",
+    }
+    for r in rows:
+        sev = sev_marker.get(r["severity"], "⚪ —")
+        files = ", ".join(f"`{f}`" for f in r["all_touched_files"][:3])
+        lines.append(f"- **{r['id']}** — {sev} — _{r['kind']}_ — {r['title']}")
+        lines.append(f"  - Touched in this session: {files}")
+        lines.append(f"  - Source: `{r['source_path']}`")
+        lines.append(f"  - Action: {r['what_to_do']}")
+    return "\n".join(lines)
+
+
+def _render_stale_rules_warning(ctx: Context) -> str:
+    """Module 2: surface a count of rules due for review.
+
+    Cheap nudge — the full list lives behind `dotagent dream review-stale`.
+    Suppressed entirely when no rules are stale.
+    """
+    if not ctx.semantic_pointer_cards and not _has_graduated_rules(ctx):
+        return ""
+    try:
+        from ..dream.lifecycle import review_stale
+        from ..paths import Paths
+        # Need a Paths object — reconstruct from repo_path
+        from pathlib import Path
+        paths = Paths(repo=Path(ctx.repo_path))
+        stale = review_stale(paths, include_due_soon_days=14)
+    except Exception:
+        return ""
+    if not stale:
+        return ""
+    past = [s for s in stale if s.reason in ("review_after_passed", "legacy_no_metadata", "cited_files_churned")]
+    due_soon = [s for s in stale if s.reason == "due_soon"]
+    lines = ["## ⚠ Rule lifecycle"]
+    lines.append("")
+    if past:
+        lines.append(f"- **{len(past)} rule(s) overdue for review** — they may no longer reflect "
+                     f"the current codebase.")
+    if due_soon:
+        lines.append(f"- {len(due_soon)} rule(s) due for review in the next 14 days.")
+    lines.append("")
+    lines.append("Run `dotagent dream review-stale` for the list; "
+                 "`dotagent dream rerationale <id> --rationale \"...\"` to extend each, "
+                 "`dotagent dream expire-stale` to retire past-grace rules.")
+    return "\n".join(lines)
+
+
+def _has_graduated_rules(ctx: Context) -> bool:
+    """Heuristic — do we even have graduated rules to warn about?"""
+    from pathlib import Path
+    sem = Path(ctx.repo_path) / ".agent" / "memory" / "semantic"
+    if not sem.exists():
+        return False
+    try:
+        return any(p.is_file() for p in sem.rglob("*.md") if "expired" not in p.parts and "sources" not in p.parts)
+    except OSError:
+        return False
 
 
 def _render_rules(ctx: Context) -> str:
