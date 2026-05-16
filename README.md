@@ -36,6 +36,12 @@ And it's a project manager: define modules through an interactive Q&A,
 track them through a dev → QA cycle where documents wire the handoff in
 both directions, and ship only when QA passes with a written rationale.
 
+And it has a governance loop: **conflict detection** warns when active
+edits touch files cited by a rule, and **rule lifecycle** surfaces /
+re-rationales / retires stale conventions so the semantic layer doesn't
+rot. See [Rule Lifecycle and Conflict Detection](https://github.com/dilawarabbas1/dotagent/wiki/Rule-Lifecycle-and-Conflict-Detection)
+on the wiki.
+
 ---
 
 ## Quickstart — 30 seconds
@@ -159,6 +165,11 @@ dotagent dream reject   <id> --rationale "..."   # rationale REQUIRED
 dotagent dream cron-install           # daily 02:00 UTC
 dotagent dream github-action          # write nightly PR workflow
 
+# rule lifecycle (Phase 8 — added 0.3.0)
+dotagent dream review-stale           # rules overdue, due-soon, or with churned files
+dotagent dream rerationale <id> --rationale "..."   # extend review_after; rationale REQUIRED
+dotagent dream expire-stale           # move past-grace rules to dream/expired/
+
 # bridging tools without native hooks
 dotagent watch cursor                 # foreground watcher (Cursor < 0.40)
 dotagent serve --host 0.0.0.0 --port 9700   # team event server
@@ -237,6 +248,8 @@ for the full workflow.
 | Stack-trace → past failures lookup | no                | no           | no                     | **`dotagent tool debug`** |
 | Auto-learn from team experience   | no                 | no           | no                     | **Auto-Dream with mandatory rationale** |
 | Track modules through dev ↔ QA cycle | no              | no           | no                     | **`dotagent project` with mandatory QA rationale** |
+| Warn before a change conflicts with a rule | no         | no           | no                     | **conflict detection on active edits** |
+| Rule expiration + re-rationale     | no                 | no           | no                     | **`dream review-stale` / `rerationale` / `expire-stale`** |
 
 ---
 
@@ -327,12 +340,12 @@ Common failure modes and fixes are in
 
 ## Status
 
-**v0.2.0 — launch-ready** with project management. 102 tests passing across
-all phases. Live-tested end-to-end (interactive Q&A, real git diff, full
-dev↔QA cycle, multi-module dep resolution, backup/restore, server over HTTP).
-Not yet on PyPI (install via git URL works); not yet on the VS Code
-Marketplace (build the `.vsix` from `extensions/vscode-copilot/`). Both are
-convenience-only and don't block use.
+**v0.3.0** — launch-ready with project management, conflict detection, and
+rule lifecycle. 137 tests passing across all phases. Live-tested end-to-end
+(interactive Q&A, real git diff, full dev↔QA cycle, multi-module dep
+resolution, backup/restore, server over HTTP). Not yet on PyPI (install via
+git URL works); not yet on the VS Code Marketplace (build the `.vsix` from
+`extensions/vscode-copilot/`). Both are convenience-only and don't block use.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
 

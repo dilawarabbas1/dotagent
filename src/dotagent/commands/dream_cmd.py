@@ -8,6 +8,7 @@ from ..dream.clustering import cluster_events
 from ..dream.cron import install as cron_install
 from ..dream.cron import uninstall as cron_uninstall
 from ..dream.cron import write_github_action
+from ..dream.lifecycle import expire_stale, rerationale, review_stale
 from ..dream.pipeline import list_candidates
 from ..dream.signals import extract_signals
 from ..paths import Paths, find_repo_root
@@ -100,3 +101,61 @@ def cmd_github_action() -> None:
     paths = _paths()
     target = write_github_action(paths)
     click.echo(f"wrote {target}")
+
+
+# ---- Module 2: lifecycle ---------------------------------------------------
+
+
+@dream_group.command(name="review-stale", help="List graduated rules due for review (or whose cited files churned).")
+@click.option("--due-soon-days", default=14, type=int,
+              help="Also include rules whose review_after falls within the next N days.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text")
+def cmd_review_stale(due_soon_days: int, fmt: str) -> None:
+    paths = _paths()
+    stale = review_stale(paths, include_due_soon_days=due_soon_days)
+    if fmt == "json":
+        import json
+        click.echo(json.dumps([s.to_dict() for s in stale], indent=2))
+        return
+    if not stale:
+        click.echo("(no rules are due for review)")
+        return
+    click.echo(f"{len(stale)} rule(s) due for review:")
+    for s in stale:
+        flag = {
+            "review_after_passed":  f"⏰ {s.days_overdue}d overdue",
+            "due_soon":             f"⏳ due in {-s.days_overdue}d",
+            "cited_files_churned":  "📁 cited files changed",
+            "legacy_no_metadata":   f"🕰  legacy ({s.days_overdue}d past default lifetime)",
+        }.get(s.reason, s.reason)
+        click.echo(f"  · {s.path.stem:50s} {flag:30s} {s.entry.title[:60]}")
+    click.echo("\n→ to re-rationale: `dotagent dream rerationale <rule-id> --rationale \"...\"`")
+    click.echo("→ to retire stale:  `dotagent dream expire-stale`")
+
+
+@dream_group.command(name="rerationale", help="Mark a stale rule as reviewed. Rationale REQUIRED.")
+@click.argument("rule_id")
+@click.option("--rationale", required=True, help="Why this rule is still valid. Mandatory.")
+@click.option("--extend-days", default=None, type=int, help="Extend review_after by N days (default: full lifetime).")
+def cmd_rerationale(rule_id: str, rationale: str, extend_days: int | None) -> None:
+    paths = _paths()
+    try:
+        target = rerationale(paths, rule_id, rationale=rationale, extend_days=extend_days)
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+    click.echo(f"✓ re-rationaled → {target.relative_to(paths.repo)}")
+
+
+@dream_group.command(name="expire-stale", help="Move past-grace stale rules to dream/expired/ (never deletes).")
+@click.option("--grace-period-days", default=30, type=int)
+@click.option("--dry-run", is_flag=True)
+def cmd_expire_stale(grace_period_days: int, dry_run: bool) -> None:
+    paths = _paths()
+    moved = expire_stale(paths, grace_period_days=grace_period_days, dry_run=dry_run)
+    if not moved:
+        click.echo("(no rules past grace period)")
+        return
+    verb = "would move" if dry_run else "moved"
+    click.echo(f"{verb} {len(moved)} rule(s) to {paths.dream / 'expired'}:")
+    for p in moved:
+        click.echo(f"  · {p.name}")

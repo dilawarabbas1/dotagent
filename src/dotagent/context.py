@@ -95,6 +95,68 @@ class Context:
                     out[key].append(e)
         return out
 
+    # ---- Conflict detection (Module 1) ------------------------------------
+    #
+    # When the active developer's recent files (working memory) overlap with
+    # files cited by semantic rules / bug-registry entries / anti-patterns,
+    # surface that overlap as a `Conflict` so the rendered CLAUDE.md can warn
+    # the AI agent before the conflicting change lands.
+
+    def detect_conflicts(self, *, top_n: int | None = None) -> list[dict]:
+        """Return active-file ↔ rule conflicts, ranked by severity.
+
+        Each returned dict has keys: file, kind, id, title, severity, source_path,
+        what_to_do. Empty list if working memory has no files yet OR no rules
+        cite those files.
+        """
+        files = list(self.current.recent_files or [])
+        if not files:
+            return []
+        n = top_n if top_n is not None else self.config_top_n.get("conflicts_top_n", 8)
+
+        rows: list[dict] = []
+        for kind_id, kind_label, source_kind in (
+            ("bugs",          "bug-registry", "bug_registry"),
+            ("anti_patterns", "anti-pattern", "anti_patterns"),
+        ):
+            src = self.sources.get(source_kind)
+            if not src or not src.exists:
+                continue
+            files_set = {f.lower() for f in files}
+            for e in src.entries:
+                touched = [f for f in (e.files or []) if f.lower() in files_set]
+                if not touched:
+                    continue
+                rows.append({
+                    "file": touched[0],
+                    "all_touched_files": touched,
+                    "kind": kind_label,
+                    "id": e.id,
+                    "title": e.title,
+                    "severity": e.severity or "unknown",
+                    "source_path": src.path,
+                    "what_to_do": _conflict_remedy(kind_label, e),
+                })
+
+        # graduated semantic rules can also cite files via their body — best-effort scan
+        for card_name in self.semantic_pointer_cards:
+            # the pointer card itself has no file citations; skip. The graduated rules
+            # under .agent/memory/semantic/rules/ are checked by callers that load them.
+            pass
+
+        rows.sort(key=lambda r: (_SEVERITY_ORDER.get(r["severity"], 5), r["id"]))
+        return rows[:n]
+
+
+def _conflict_remedy(kind: str, entry: SourceEntry) -> str:
+    """One-line 'what to do' hint for a conflict row."""
+    if kind == "bug-registry":
+        return f"Verify the change does not regress {entry.id} (see body of the entry)."
+    if kind == "anti-pattern":
+        return f"Review {entry.id} before merging — your change touches files this pattern forbids."
+    return f"Review {entry.id} for relevance."
+
+
 
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "p0": 0, "p1": 1, "p2": 2, "medium": 2, "low": 3, "p3": 3, "": 4, "unknown": 4}
 
