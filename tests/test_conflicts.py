@@ -197,3 +197,116 @@ def test_legacy_dict_context_does_not_break_renderer(tmp_path: Path):
     ctx = coerce_to_context(legacy_dict, Paths(repo=tmp_path))
     body = render_body(ctx, tool_label="Claude Code")
     assert "Rule conflicts in active edits" not in body  # no working memory in legacy dict path
+
+
+# ---- semantic-memory rule conflict scan -----------------------------------
+# Regression: graduated semantic rules citing files must also surface as
+# conflicts, not only docs/-indexed sources.
+
+
+def test_graduated_semantic_rule_citing_file_surfaces_as_conflict(tmp_path: Path):
+    """Auto-Dream graduates a rule citing `services/payments/charge.py`.
+    Developer edits that file. Conflict must surface."""
+    from dotagent.memory.semantic import SemanticEntry, SemanticMemory
+    paths = _setup(tmp_path)
+    cfg = Config.load(paths)
+    reindex_all(paths, cfg.raw["sources"])  # no docs sources matter here
+
+    mem = SemanticMemory(paths)
+    mem.write(SemanticEntry(
+        kind="rules", category="auto-dream",
+        title="No partial-charge retries without idempotency key",
+        body=(
+            "Don't retry partial charges in `services/payments/charge.py` without "
+            "an idempotency_key. Caused two double-charge incidents in March."
+        ),
+        rationale="Two double-charge incidents in March",
+        provenance="auto-dream graduation from cycle 03",
+        graduated_by="alice",
+    ))
+
+    _seed_working_memory(paths, "alice", ["services/payments/charge.py"])
+    ctx = build_context(paths, actor="alice", config=cfg)
+    rows = ctx.detect_conflicts()
+    assert len(rows) == 1, f"expected 1 conflict, got {rows}"
+    assert rows[0]["kind"] == "semantic-rule"
+    assert "services/payments/charge.py" in rows[0]["all_touched_files"]
+    assert "double-charge" not in rows[0]["title"]  # title is the H1, not body content
+    assert "idempotency" in rows[0]["title"].lower() or "partial" in rows[0]["title"].lower()
+
+
+def test_graduated_rule_severity_inferred_from_body_or_category(tmp_path: Path):
+    from dotagent.memory.semantic import SemanticEntry, SemanticMemory
+    paths = _setup(tmp_path)
+    cfg = Config.load(paths)
+    reindex_all(paths, cfg.raw["sources"])
+    mem = SemanticMemory(paths)
+
+    # explicit severity in body
+    mem.write(SemanticEntry(
+        kind="rules", category="auto-dream",
+        title="Explicit critical rule",
+        body="**Severity**: critical\n\nNever skip `services/auth/jwt.py` validation.",
+        rationale="x",
+    ))
+    # implicit (auto-dream defaults to high)
+    mem.write(SemanticEntry(
+        kind="rules", category="auto-dream",
+        title="Implicit high rule",
+        body="Avoid retries on `services/payments/charge.py` without keys.",
+        rationale="x",
+    ))
+
+    _seed_working_memory(paths, "alice", [
+        "services/auth/jwt.py", "services/payments/charge.py",
+    ])
+    ctx = build_context(paths, actor="alice", config=cfg)
+    rows = ctx.detect_conflicts()
+    severities = [r["severity"] for r in rows]
+    assert "critical" in severities
+    assert "high" in severities
+    # critical comes first in ordering
+    assert rows[0]["severity"] == "critical"
+
+
+def test_no_semantic_rule_false_positive_when_file_not_cited(tmp_path: Path):
+    from dotagent.memory.semantic import SemanticEntry, SemanticMemory
+    paths = _setup(tmp_path)
+    cfg = Config.load(paths)
+    reindex_all(paths, cfg.raw["sources"])
+    mem = SemanticMemory(paths)
+    mem.write(SemanticEntry(
+        kind="rules", category="auto-dream",
+        title="Unrelated rule",
+        body="Don't bypass `services/billing/invoice.py`.",
+        rationale="x",
+    ))
+    _seed_working_memory(paths, "alice", ["services/api/handler.py"])
+    ctx = build_context(paths, actor="alice", config=cfg)
+    assert ctx.detect_conflicts() == []
+
+
+def test_expired_semantic_rules_not_scanned_for_conflicts(tmp_path: Path):
+    """Rules moved to `.agent/dream/expired/` must NOT trigger conflict warnings."""
+    from dotagent.memory.semantic import SemanticEntry, SemanticMemory
+    paths = _setup(tmp_path)
+    cfg = Config.load(paths)
+    reindex_all(paths, cfg.raw["sources"])
+    expired_dir = paths.dream / "expired"
+    expired_dir.mkdir(parents=True, exist_ok=True)
+    (expired_dir / "expired-rule.md").write_text(
+        "# Expired rule\n\nDon't touch `services/api/handler.py`.\n"
+    )
+    _seed_working_memory(paths, "alice", ["services/api/handler.py"])
+    ctx = build_context(paths, actor="alice", config=cfg)
+    rows = ctx.detect_conflicts()
+    # the expired rule is not under .agent/memory/semantic/, so it won't match anyway;
+    # what we're guarding against is the path-based filter scanning it accidentally.
+    # Add it under a path that has "expired" in it to be sure.
+    fake_path = paths.semantic / "rules" / "expired" / "ghost.md"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    fake_path.write_text("# Ghost\n\nFile `services/api/handler.py` mentioned.\n")
+    ctx2 = build_context(paths, actor="alice", config=cfg)
+    rows2 = ctx2.detect_conflicts()
+    ids = [r["id"] for r in rows2]
+    assert "ghost" not in ids, "rule under expired/ subpath leaked into conflicts"

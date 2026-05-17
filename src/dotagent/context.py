@@ -138,14 +138,96 @@ class Context:
                     "what_to_do": _conflict_remedy(kind_label, e),
                 })
 
-        # graduated semantic rules can also cite files via their body — best-effort scan
-        for card_name in self.semantic_pointer_cards:
-            # the pointer card itself has no file citations; skip. The graduated rules
-            # under .agent/memory/semantic/rules/ are checked by callers that load them.
-            pass
+        # Graduated semantic rules can also cite files via their body. Scan
+        # `.agent/memory/semantic/rules/` and `.agent/memory/semantic/patterns/`
+        # for file references (backtick-wrapped paths) overlapping with the
+        # active recent_files.
+        from pathlib import Path
+        from .paths import Paths
+        try:
+            paths = Paths(repo=Path(self.repo_path))
+            files_set = {f.lower() for f in files}
+            for rule_path in self._iter_semantic_rule_files(paths):
+                rule_text = ""
+                try:
+                    rule_text = rule_path.read_text(errors="replace")
+                except OSError:
+                    continue
+                touched = _cited_files_in(rule_text, files_set)
+                if not touched:
+                    continue
+                title = _first_h1(rule_text) or rule_path.stem
+                severity = _infer_severity_from_path_or_text(rule_path, rule_text)
+                rows.append({
+                    "file": touched[0],
+                    "all_touched_files": touched,
+                    "kind": "semantic-rule",
+                    "id": rule_path.stem,
+                    "title": title,
+                    "severity": severity,
+                    "source_path": str(rule_path.relative_to(paths.repo)),
+                    "what_to_do": (
+                        f"This graduated rule cites a file you're editing — "
+                        f"open `{rule_path.relative_to(paths.repo)}` and confirm the "
+                        f"change is still consistent with the rule's rationale."
+                    ),
+                })
+        except Exception as e:
+            from .logging import log_exception
+            log_exception("semantic-rule conflict scan failed", e)
 
         rows.sort(key=lambda r: (_SEVERITY_ORDER.get(r["severity"], 5), r["id"]))
         return rows[:n]
+
+    def _iter_semantic_rule_files(self, paths):
+        """Yield .md files under semantic/rules and semantic/patterns. Skip pointer cards + expired."""
+        for sub in ("rules", "patterns"):
+            root = paths.semantic / sub
+            if not root.exists():
+                continue
+            for p in root.rglob("*.md"):
+                if "expired" in p.parts or "sources" in p.parts:
+                    continue
+                yield p
+
+
+_CITED_FILE_RE = __import__("re").compile(
+    r"`([\w./\-_]+\.(?:py|js|ts|tsx|jsx|go|rs|rb|java|sql|sh|cjs|mjs|md|yaml|yml|toml|json))`"
+)
+
+
+def _cited_files_in(text: str, files_set: set[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _CITED_FILE_RE.finditer(text):
+        f = m.group(1)
+        if f.lower() in files_set and f not in seen:
+            out.append(f)
+            seen.add(f)
+    return out
+
+
+def _first_h1(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
+
+
+def _infer_severity_from_path_or_text(path, text: str) -> str:
+    """Best-effort: look for a 'severity' field in the rule body; else use the
+    rule's category as a coarse signal. `bugs` and `auto-dream` graduations
+    default to high so they don't get drowned by medium-severity sources."""
+    import re
+    m = re.search(r"\*\*Severity\*\*\s*[:：]\s*(\w+)", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip().lower()
+    cat = next((p for p in path.parts if p in ("bugs", "anti-patterns", "auto-dream", "patterns")), "")
+    if cat == "bugs":
+        return "high"
+    if cat == "auto-dream":
+        return "high"
+    return "medium"
 
 
 def _conflict_remedy(kind: str, entry: SourceEntry) -> str:
