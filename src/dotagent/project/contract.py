@@ -630,6 +630,18 @@ def freeze_contract(
     if contract.status == ContractStatus.FROZEN:
         return snapshot  # idempotent
 
+    src = paths.repo / contract.path
+    if not src.exists():
+        raise FileNotFoundError(f"contract.md missing at {src}")
+
+    if not force:
+        validation = validate_contract(src)
+        if not validation.ok:
+            raise PermissionError(
+                "validate refused: " + "; ".join(validation.violations)
+                + " — fix the contract or pass --force to override"
+            )
+
     if not force:
         diff = diff_contract(paths, module)
         if not diff.converged:
@@ -637,10 +649,6 @@ def freeze_contract(
                 f"contract has not converged (reason={diff.reason!r}); "
                 f"pass --force to override"
             )
-
-    src = paths.repo / contract.path
-    if not src.exists():
-        raise FileNotFoundError(f"contract.md missing at {src}")
 
     # Rollback gate: if the contract triggers the migration signal (S10) AND
     # the rollback plan is empty, refuse to freeze. This catches "we're shipping
