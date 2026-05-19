@@ -295,3 +295,10 @@ def cmd_next() -> None:
         click.echo(f"  awaiting QA — `dotagent project qa-prompt {mod.id}`")
     elif mod.state == ModuleState.QA_PASSED:
         click.echo(f"  ship: `dotagent project resolve {mod.id}`")
+
+
+# ---- Pre-build contract subgroup -------------------------------------------
+# Registers `dotagent project contract ...` lazily at import time so the
+# subgroup lives alongside the existing project verbs without touching cli.py.
+from .contract_cmd import contract_group as _contract_group  # noqa: E402
+project_group.add_command(_contract_group)
