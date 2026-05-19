@@ -55,6 +55,7 @@ SECTION_ANCHORS = (
     "out-of-scope",
     "test-plan",
     "uat-proof",
+    "rollback-plan",  # added v0.4 — required for migration-bearing cycles, optional placeholder otherwise
     "negotiation-log",
 )
 
@@ -137,15 +138,18 @@ KNOWN_ACTORS = (ACTOR_DEV, ACTOR_QA)
 
 # ---- Template --------------------------------------------------------------
 
-# The template is intentionally minimal. Every required section appears with
-# its stable HTML-comment anchor; everything else is placeholder text the
-# agents are expected to replace.
+# The template carries per-section discipline rules in each blockquote so the
+# rubric criteria are visible inline in the file the agents are editing.
+# Adding a section here without updating SECTION_ANCHORS is a bug — validate
+# will accept a contract missing the new section silently.
 _TEMPLATE = """\
 # Contract — {{ module_id }} — cycle {{ cycle_n }}
 
 > Pre-build contract. Co-authored by Claude (dev) and Codex (QA) before any
 > code is written for this cycle. Converges when both sides leave it
-> unchanged for one round. Frozen contracts are immutable.
+> unchanged for one round. Frozen contracts are immutable. `dotagent project
+> contract score <module>` grades the body against a 10-signal rubric
+> (max 30); convergence is typically refused below 27.
 
 - **Module:** `{{ module_id }}` — {{ module_name }}
 - **Cycle:** {{ cycle_n }}
@@ -155,6 +159,10 @@ _TEMPLATE = """\
 <!-- anchor: scope -->
 ## Scope
 
+> Scope = product intent only. 3-5 bullets. NO file paths, table names,
+> constants, or regex patterns here — those go in 'Surfaces touched'.
+> (Scored as S1 + S2: max 6 points.)
+
 {{ purpose }}
 
 {% for line in in_scope %}- {{ line }}
@@ -163,12 +171,11 @@ _TEMPLATE = """\
 <!-- anchor: acceptance-criteria -->
 ## Acceptance criteria
 
-> Each criterion must be a single testable assertion — at most 200 characters,
-> no `TODO` / `FIXME` / `xxx` / `lorem`. Carry at least one signal that the
-> criterion is exercisable: a testable verb (e.g., `returns`, `passes`,
-> `exceeds`, `stays below`), a comparison operator (`==`, `<=`, `>=`),
-> a numeric threshold with unit (`200ms`, `p95`, `30 seconds`, `5%`),
-> or a concrete test or command (`pytest`, `npm test`, `curl`, `exit code`).
+> 8-15 numbered criteria. One assertion per line — no 'X and Y and Z'.
+> Each must carry a verb (`returns`, `passes`, `exits`) AND a threshold
+> (numeric+unit OR `exit code 0` OR a named test file). Cover every noun
+> from Scope. No `TODO` / `FIXME` / `xxx` / `lorem`; ≤200 chars each.
+> (Scored as S3 + S4 + S5 + S6: max 12 points.)
 
 {% for c in acceptance_criteria %}{{ loop.index }}. {{ c }}
 {% endfor %}
@@ -176,21 +183,28 @@ _TEMPLATE = """\
 <!-- anchor: must-not-regress -->
 ## Must not regress
 
-> Fill from prior-cycle qa-findings and the bug registry. Empty placeholder
-> below — agents fill this in.
+> Each entry: a `DA-BUG-####` / `AP-###` / `F###` id PLUS a guard test filename
+> (for example `auth_rotation.test.py`). No prose-only invariants. Greenfield
+> modules write `(none — greenfield)` as the single entry.
+> (Scored as S7: max 3 points.)
 
 - _(no entries yet — agents to populate)_
 
 <!-- anchor: doc-surfaces -->
 ## Doc surfaces to update
 
-> Files under `docs/` and the wiki that this change must keep current.
-> Empty placeholder — agents fill in.
+> Every file, every migration (resolved number — no `NNN` placeholders),
+> every test path, every doc surface BY SECTION (`CLAUDE.md §Architecture`,
+> not just `CLAUDE.md`). (Scored as S8: max 3 points.)
 
 - _(no entries yet — agents to populate)_
 
 <!-- anchor: out-of-scope -->
 ## Out of scope
+
+> Numbered list. Each item phase-tagged: `[Phase N]`, `[mNN]`, `[never]`,
+> or `[owner-decision]`. Untagged items don't count.
+> (Scored as S9: max 3 points.)
 
 {% if out_of_scope %}{% for line in out_of_scope %}- {{ line }}
 {% endfor %}{% else %}- _(none specified)_
@@ -199,16 +213,26 @@ _TEMPLATE = """\
 <!-- anchor: test-plan -->
 ## Test plan
 
-> How the acceptance criteria above will actually be exercised.
-> Agents to populate.
+> Group by tier: unit / integration / smoke / load (load only if on a
+> hot path).
 
 - _(no entries yet — agents to populate)_
 
 <!-- anchor: uat-proof -->
 ## UAT proof plan
 
-> What artifacts (logs, screenshots, scorecards) will be attached to the
-> handoff to prove the criteria are met.
+> Each line is a paste-ready command — `curl -i`, `psql -c`, `redis-cli` —
+> no prose summaries.
+
+- _(no entries yet — agents to populate)_
+
+<!-- anchor: rollback-plan -->
+## Rollback plan
+
+> Required when this cycle includes a migration, schema change, or feature
+> flag. Each rollback: the revert command + a smoke test name asserting
+> post-revert health. Greenfield / additive-only cycles write
+> `(none — additive change only)`. (Part of S10.)
 
 - _(no entries yet — agents to populate)_
 
@@ -216,6 +240,7 @@ _TEMPLATE = """\
 ## Negotiation log
 
 > Append-only audit trail. Each row is one round's write — never edited.
+> Maintained by dotagent — agents must not edit lines below this anchor.
 
 - Round 1 proposal by Claude · {{ proposal_hash }} · {{ now }}
 """
@@ -616,6 +641,25 @@ def freeze_contract(
     src = paths.repo / contract.path
     if not src.exists():
         raise FileNotFoundError(f"contract.md missing at {src}")
+
+    # Rollback gate: if the contract triggers the migration signal (S10) AND
+    # the rollback plan is empty, refuse to freeze. This catches "we're shipping
+    # a schema change with no documented rollback path" — historically a
+    # post-incident regret. `--force` overrides.
+    if not force:
+        from ._signals import has_migration_trigger, s10_rollback_perf_observability
+        body_for_score = src.read_text()
+        anchor = "<!-- anchor: negotiation-log -->"
+        idx = body_for_score.find(anchor)
+        substantive = body_for_score if idx < 0 else body_for_score[:idx]
+        if has_migration_trigger(substantive):
+            s10 = s10_rollback_perf_observability(substantive)
+            if s10.score == 0:
+                raise PermissionError(
+                    "contract has a migration trigger but S10 (rollback / perf / "
+                    "observability) scores 0 — populate the rollback plan, or pass "
+                    "--force to override"
+                )
 
     body = src.read_text()
     actor = resolve_actor_id(paths)
