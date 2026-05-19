@@ -82,6 +82,35 @@ def test_freeze_snapshot_is_read_only(tmp_path: Path):
         assert mode & 0o222 == 0, f"snapshot is writable (mode={oct(mode)})"
 
 
+def test_freeze_refuses_on_validate_failure(tmp_path: Path):
+    """A contract that fails `validate` cannot be frozen — even after
+    convergence. --force still overrides."""
+    paths = setup_repo(tmp_path)
+    _, module = make_project_with_module(paths)
+    init_contract(paths, module)
+    cp = paths.repo / module.current_cycle.contract.path
+
+    # Drive to convergence so the convergence gate would otherwise pass.
+    body = cp.read_text()
+    anchor = "<!-- anchor: negotiation-log -->"
+    idx = body.find(anchor)
+    cp.write_text(body[:idx] + "\n<!-- codex substantive counter -->\n" + body[idx:])
+    advance_round(paths, module, actor_side=ACTOR_QA)
+    advance_round(paths, module, actor_side=ACTOR_DEV)
+
+    # Break the schema: strip the rollback-plan anchor → validate fails.
+    broken = cp.read_text().replace("<!-- anchor: rollback-plan -->", "")
+    cp.write_text(broken)
+
+    with pytest.raises(PermissionError, match="rollback-plan"):
+        freeze_contract(paths, module)
+
+    # --force overrides validate (and every other gate).
+    snapshot = freeze_contract(paths, module, force=True)
+    assert snapshot.exists()
+    assert module.current_cycle.contract.status == ContractStatus.FROZEN
+
+
 def test_freeze_is_idempotent(tmp_path: Path):
     paths = setup_repo(tmp_path)
     _, module = make_project_with_module(paths)
