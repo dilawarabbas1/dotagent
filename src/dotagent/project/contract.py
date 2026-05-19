@@ -62,13 +62,67 @@ SECTION_ANCHORS = (
 # these in a contract means it isn't done.
 FORBIDDEN_TOKENS = ("TODO", "FIXME", "xxx", "lorem")
 
-# At least one of these tokens must appear in each acceptance criterion —
-# the "verb-shape" signal that the criterion is testable.
-VERB_SHAPE_TOKENS = (
-    "returns", "equals", "passes", "under",
-    "exits", "redirects", "matches",
-    ">=", "<=", "==",
+# A criterion must carry at least one "verb-shape" signal — anything that
+# marks it as a testable assertion rather than a vague intent. The check is a
+# union of four cheap signals; matching ANY of them is sufficient. The breadth
+# is deliberate — keyword-only detection trained agents to write "magic word"
+# salad rather than natural prose.
+VERB_KEYWORDS = (
+    # outcomes
+    "returns", "equals", "passes", "exits", "redirects", "matches",
+    "succeeds", "fails", "errors", "throws", "completes",
+    # trajectories
+    "stays", "falls", "rises", "exceeds", "meets", "satisfies",
+    # set membership
+    "contains", "lacks", "includes", "excludes",
+    # bounds + positioning
+    "within", "outside", "above", "below", "before", "after",
 )
+
+# Comparison operators. Bare `=` is intentional: "name = value" is a real
+# assertion. Substring-matched on the lowercased criterion text.
+COMPARISON_OPERATORS = (
+    "==", "!=", "<=", ">=", "≤", "≥", "<", ">", "=",
+)
+
+# Numeric threshold paired with a unit. Catches "200ms p95", "30 seconds",
+# "99.9%", "10mb", "p99 latency 200ms" etc. without forcing a verb keyword.
+# A negative-lookahead in place of `\b` so units that end in a non-word char
+# (e.g., `%`) still anchor correctly when followed by whitespace.
+_NUMERIC_THRESHOLD_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:ms|sec|secs|seconds?|min|mins|minutes?|"
+    r"h|hr|hrs|hours?|kb|mb|gb|tb|%|p\d{2,3}|s)(?![a-zA-Z0-9])",
+    re.IGNORECASE,
+)
+
+# Concrete test or command references. Implies the criterion can be exercised.
+_TEST_COMMAND_RE = re.compile(
+    r"\b(?:pytest|npm\s+test|cargo\s+test|go\s+test|make\s+test|"
+    r"curl|grep|jq|exit\s+code|sha256|sha1)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_verb_shape(criterion: str) -> bool:
+    """Return True iff `criterion` carries at least one of the four signals.
+
+    Order: cheap substring checks first; regex last. Short-circuit on first match.
+    """
+    low = criterion.lower()
+    if any(kw in low for kw in VERB_KEYWORDS):
+        return True
+    if any(op in criterion for op in COMPARISON_OPERATORS):  # ops are case-insensitive already
+        return True
+    if _NUMERIC_THRESHOLD_RE.search(criterion):
+        return True
+    if _TEST_COMMAND_RE.search(criterion):
+        return True
+    return False
+
+
+# Kept for backward compatibility with anything outside this module that may
+# reference the old constant; the validator no longer reads it directly.
+VERB_SHAPE_TOKENS = VERB_KEYWORDS + COMPARISON_OPERATORS
 
 MAX_CRITERION_LENGTH = 200
 MIN_CRITERIA_COUNT = 3
@@ -109,10 +163,12 @@ _TEMPLATE = """\
 <!-- anchor: acceptance-criteria -->
 ## Acceptance criteria
 
-> Each criterion must be a single executable line — a test command, a curl
-> probe, or a scorecard threshold — and contain a verb-shape signal such as
-> `returns`, `equals`, `passes`, `under`, `>=`, `<=`, or `==`. Maximum 200
-> characters. No `TODO` / `FIXME` / `xxx` / `lorem`.
+> Each criterion must be a single testable assertion — at most 200 characters,
+> no `TODO` / `FIXME` / `xxx` / `lorem`. Carry at least one signal that the
+> criterion is exercisable: a testable verb (e.g., `returns`, `passes`,
+> `exceeds`, `stays below`), a comparison operator (`==`, `<=`, `>=`),
+> a numeric threshold with unit (`200ms`, `p95`, `30 seconds`, `5%`),
+> or a concrete test or command (`pytest`, `npm test`, `curl`, `exit code`).
 
 {% for c in acceptance_criteria %}{{ loop.index }}. {{ c }}
 {% endfor %}
@@ -371,11 +427,14 @@ def validate_contract(path: Path) -> ValidationResult:
             violations.append(
                 f"criterion {i} is {len(c)} chars; max is {MAX_CRITERION_LENGTH}"
             )
-        if not any(token.lower() in c.lower() for token in VERB_SHAPE_TOKENS):
+        if not _has_verb_shape(c):
             violations.append(
-                f"criterion {i} lacks a verb-shape signal "
-                f"(one of: {', '.join(VERB_SHAPE_TOKENS)}); "
-                f"rewrite as a testable assertion"
+                f"criterion {i} lacks a verb-shape signal — none of: "
+                f"a testable verb (e.g., returns / passes / exceeds / stays), "
+                f"a comparison operator (==, !=, <=, >=), "
+                f"a numeric threshold with unit (e.g., 200ms, p95, 30 seconds), "
+                f"or a concrete test/command (pytest, npm test, curl, exit code). "
+                f"Rewrite the criterion as a testable assertion."
             )
 
     return ValidationResult(not violations, violations)
@@ -466,12 +525,26 @@ class DiffResult:
 
 
 def diff_contract(paths: Paths, module: Module) -> DiffResult:
-    """Compare the on-disk contract.md hash to the previous-round actor's
-    recorded hash to decide if the contract has converged.
+    """Decide whether the contract has converged across actors.
 
-    Converged means: the file is byte-identical to what the *opposing* actor
-    last wrote. That is, the actor on the current side has read and accepted
-    the prior side's version without modification.
+    Returns a `DiffResult` whose JSON shape is the contract Coda integrates
+    against.
+
+    **Hash asymmetry — important for integrators.** The returned `hash` field
+    is the full-file sha256 of `contract.md` (a stable identifier for the
+    file's current on-disk state). The `converged` field is computed from
+    *content* hashes — the file body excluding the auto-appended Negotiation
+    log section. Callers should trust `converged` to detect "did the actor
+    actually change anything"; they should NOT recompute convergence by
+    comparing `hash` values across rounds. The `hash` will always drift
+    between rounds because `advance_round` appends a log line on every call;
+    that is by design, not a bug.
+
+    Converged means: the substantive body (everything before
+    `<!-- anchor: negotiation-log -->`) is byte-identical between what the
+    proposing actor most recently wrote and what the countering actor most
+    recently wrote — i.e., one side has read and accepted the other side's
+    version without modification.
     """
     if not module.current_cycle or not module.current_cycle.contract:
         return DiffResult(path="", round=0, hash="", converged=False, reason="no-contract")
