@@ -13,6 +13,8 @@ Source of truth for project completion lives in `.agent/project/plan.yaml`.
 """
 
 from .model import (
+    Contract,
+    ContractStatus,
     Cycle,
     Module,
     ModuleState,
@@ -23,6 +25,8 @@ from .model import (
 )
 
 __all__ = [
+    "Contract",
+    "ContractStatus",
     "Cycle",
     "Module",
     "ModuleState",
