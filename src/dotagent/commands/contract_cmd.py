@@ -109,6 +109,15 @@ def cmd_round(module_id: str, actor_side: str) -> None:
 @contract_group.command(name="diff", help="Print convergence status. Always exits 0; caller parses JSON.")
 @click.argument("module_id")
 def cmd_diff(module_id: str) -> None:
+    """Emit `{path, round, hash, converged, reason}` as JSON.
+
+    Integrator note: the `hash` field is the full-file sha256 of contract.md
+    (stable id for the current on-disk state). The `converged` field is
+    computed from CONTENT hashes — the body before the negotiation-log
+    anchor — and is what callers (coda) should branch on. Comparing `hash`
+    values across rounds will always show drift because dotagent appends to
+    the log on every `round` call; that is by design.
+    """
     paths = _paths()
     _, module = _module_or_die(paths, module_id)
     result = ct.diff_contract(paths, module)
