@@ -58,6 +58,75 @@ def can_transition(from_state: str, to_state: str) -> bool:
 
 # ---- Per-cycle records ------------------------------------------------------
 
+class ContractStatus:
+    """Lifecycle states for the per-cycle pre-build contract artifact.
+
+    Mirrors `ModuleState` shape (class with string constants) rather than `Enum`,
+    consistent with the rest of this module.
+    """
+
+    PROPOSED = "proposed"   # initial contract.md written; round=1
+    COUNTER = "counter"     # opposing actor has produced a counter-version
+    FROZEN = "frozen"       # contract has converged; immutable for this cycle
+
+
+CONTRACT_STATES = {
+    ContractStatus.PROPOSED, ContractStatus.COUNTER, ContractStatus.FROZEN,
+}
+
+
+@dataclass
+class Contract:
+    """Pre-build contract attached to a `Cycle`.
+
+    The markdown body lives at `path` (relative to repo root). dotagent owns
+    only the schema and lifecycle metadata; the prose is authored by Claude
+    (dev) and Codex (QA) across negotiation rounds.
+
+    Convergence is detected when the file hash is unchanged between an actor's
+    write and the next actor's read (see `dotagent project contract diff`).
+    """
+
+    path: str = ""                                    # repo-relative path to contract.md
+    status: str = ContractStatus.PROPOSED
+    round: int = 1                                    # 1-based; advances when the *other* actor writes
+    rounds_max: int = 3
+    proposal_hash: str = ""                           # sha256:<hex> of the most-recent Claude (dev) write
+    counter_hash: str = ""                            # sha256:<hex> of the most-recent Codex (QA) write
+    frozen_at: str = ""                               # ISO timestamp set on freeze()
+    frozen_by: str = ""                               # actor id who froze the contract
+    last_actor: str = ""                              # actor of the most recent `round` call
+
+    def to_dict(self) -> dict:
+        return {
+            "path": self.path,
+            "status": self.status,
+            "round": self.round,
+            "rounds_max": self.rounds_max,
+            "proposal_hash": self.proposal_hash,
+            "counter_hash": self.counter_hash,
+            "frozen_at": self.frozen_at,
+            "frozen_by": self.frozen_by,
+            "last_actor": self.last_actor,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "Contract | None":
+        if not d:
+            return None
+        return cls(
+            path=d.get("path", ""),
+            status=d.get("status", ContractStatus.PROPOSED),
+            round=int(d.get("round", 1)),
+            rounds_max=int(d.get("rounds_max", 3)),
+            proposal_hash=d.get("proposal_hash", ""),
+            counter_hash=d.get("counter_hash", ""),
+            frozen_at=d.get("frozen_at", ""),
+            frozen_by=d.get("frozen_by", ""),
+            last_actor=d.get("last_actor", ""),
+        )
+
+
 @dataclass
 class QAResult:
     cycle: int
@@ -84,6 +153,7 @@ class Cycle:
     handoff_sha: str = ""       # git HEAD at handoff
     files_changed: list[str] = field(default_factory=list)
     qa_result: QAResult | None = None
+    contract: Contract | None = None    # pre-build artifact; populated by `contract init`
 
     def to_dict(self) -> dict:
         d = {
@@ -94,6 +164,9 @@ class Cycle:
         }
         if self.qa_result:
             d["qa_result"] = self.qa_result.to_dict()
+        # New in v0.4: appended at end so existing YAML round-trips stay backward-compatible.
+        if self.contract:
+            d["contract"] = self.contract.to_dict()
         return d
 
 
@@ -196,6 +269,7 @@ class Module:
                 handoff_at=cd.get("handoff_at", ""), handoff_sha=cd.get("handoff_sha", ""),
                 files_changed=list(cd.get("files_changed") or []),
                 qa_result=qa_obj,
+                contract=Contract.from_dict(cd.get("contract")),
             ))
         return cls(
             id=d["id"], name=d["name"],
