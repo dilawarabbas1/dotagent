@@ -173,3 +173,99 @@ def cmd_show(module_id: str) -> None:
         click.echo(body_path.read_text())
     else:
         click.echo(f"\n(contract.md missing at {body_path})")
+
+
+# ---- score -----------------------------------------------------------------
+
+@contract_group.command(name="score", help="Grade the contract against the 10-signal rubric (max 30).")
+@click.argument("module_id", required=False, default="")
+@click.option("--json", "as_json", is_flag=True, help="Emit ContractScore as JSON to stdout.")
+@click.option("--report", "as_report", is_flag=True, help="Emit a per-signal markdown report to stdout.")
+@click.option("--min", "min_total", type=int, default=0,
+              help="Exit non-zero (code 2) if total < min. Default 0 (always exits 0).")
+@click.option("--no-color", is_flag=True, help="Disable ANSI colors in --report mode.")
+def cmd_score(module_id: str, as_json: bool, as_report: bool, min_total: int, no_color: bool) -> None:
+    """Score the active module's current-cycle contract (or one named explicitly).
+
+    Default (no flags): a one-line human summary including total/band and the
+    two lowest-scoring signals' fix hints — Coda's preferred terse output.
+    """
+    paths = _paths()
+    project = require_project(paths)
+    if not module_id:
+        # resolve from project state: prefer the first non-shipped, non-blocked module
+        # with an active contract on its current cycle.
+        from ..project.model import ModuleState
+        candidate_states = (
+            ModuleState.IN_PROGRESS, ModuleState.DEV_COMPLETE, ModuleState.QA_PASSED,
+        )
+        for mid in project.module_ids:
+            m = project.modules.get(mid)
+            if m and m.state in candidate_states and m.current_cycle and m.current_cycle.contract:
+                module_id = mid
+                break
+        if not module_id:
+            raise click.ClickException(
+                "no active module with a contract found — pass <module-id> explicitly"
+            )
+    if module_id not in project.modules:
+        raise click.ClickException(f"unknown module {module_id!r}")
+    module = project.modules[module_id]
+    if not module.current_cycle or not module.current_cycle.contract:
+        raise click.ClickException(
+            f"no contract on cycle of {module_id} — run `dotagent project contract init` first"
+        )
+    body_path = paths.repo / module.current_cycle.contract.path
+    if not body_path.exists():
+        raise click.ClickException(f"contract.md missing at {body_path}")
+
+    # Score against the substantive body (negotiation log excluded).
+    from ..project.contract_rubric import score_contract
+    full = body_path.read_text()
+    anchor = "<!-- anchor: negotiation-log -->"
+    idx = full.find(anchor)
+    substantive = full if idx < 0 else full[:idx]
+    result = score_contract(substantive)
+
+    if as_json:
+        click.echo(json.dumps(result.to_dict(), indent=2))
+    elif as_report:
+        click.echo(_render_score_report(result, use_color=(sys.stdout.isatty() and not no_color)))
+    else:
+        lowest = result.lowest(2)
+        bits = ", ".join(f"{s.id} {s.name} ({s.score}/{s.max})" for s in lowest if s.score < s.max)
+        if bits:
+            click.echo(f"Contract: {result.total}/{result.max} ({result.band} band). Lowest signals: {bits}.")
+        else:
+            click.echo(f"Contract: {result.total}/{result.max} ({result.band} band). All signals at max.")
+    if min_total and result.total < min_total:
+        sys.exit(2)
+
+
+_REPORT_COLOR_BY_BAND = {
+    "ready":     "\033[32m",  # green
+    "polish":    "\033[33m",  # yellow
+    "rework":    "\033[35m",  # magenta
+    "not_ready": "\033[31m",  # red
+}
+_RESET = "\033[0m"
+
+
+def _render_score_report(result, *, use_color: bool) -> str:
+    """Per-signal markdown report. Color used only when use_color is True."""
+    band_color = _REPORT_COLOR_BY_BAND.get(result.band, "") if use_color else ""
+    reset = _RESET if use_color else ""
+    out = [
+        f"# Contract score — {band_color}{result.total}/{result.max} ({result.band}){reset}",
+        "",
+        "| Signal | Score | Evidence | Fix |",
+        "|---|---|---|---|",
+    ]
+    for s in result.signals:
+        score_str = f"{s.score}/{s.max}"
+        if use_color and s.score < s.max:
+            score_str = f"\033[33m{score_str}{_RESET}"
+        evidence = s.evidence.replace("|", "\\|")
+        fix = (s.fix or "—").replace("|", "\\|")
+        out.append(f"| {s.id} {s.name} | {score_str} | {evidence} | {fix} |")
+    return "\n".join(out)
