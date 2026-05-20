@@ -100,10 +100,13 @@ def test_episodic_append_is_safe_concurrently_per_actor(tmp_path: Path):
 
 
 def test_claude_adapter_renders_full_context_with_bug_registry(tmp_path: Path):
-    """The richer adapter render must surface bug registry, anti-patterns, and source pointers."""
+    """The v1 compendium render must surface bug registry, anti-patterns,
+    and source pointers inline. (v3 manifest is pointer-only; this test
+    exercises the explicit v1 opt-out.)"""
     paths = Paths(repo=tmp_path)
     scaffold_agent_dir(paths)
     cfg_data = merge_defaults({"project": {"name": "demo"}})
+    cfg_data["render"] = {"use_manifest": False}  # explicit v1 opt-out
     dump_yaml(paths.config, cfg_data)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "bug-registry.md").write_text(
