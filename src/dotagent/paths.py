@@ -114,6 +114,16 @@ class Paths:
         """Directory where pre-existing AI-tool configs are backed up before overwrite."""
         return self.agent / ".imported"
 
+    @property
+    def version_file(self) -> Path:
+        """Stamp of the schema version this `.agent/` tree was written against."""
+        return self.agent / ".version"
+
+    @property
+    def migration_log(self) -> Path:
+        """Append-only record of every `dotagent migrate` run for rollback."""
+        return self.agent / ".migration-log.md"
+
     # ---- Project Management (Phase 8) -------------------------------------
 
     @property

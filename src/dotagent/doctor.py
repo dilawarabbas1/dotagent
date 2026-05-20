@@ -19,6 +19,11 @@ from typing import Callable
 from .config import Config
 from .paths import Paths
 from .sources import load_cache
+from .structure_checker import (
+    SEVERITY_FAIL as _STRUCT_FAIL,
+    SEVERITY_WARN as _STRUCT_WARN,
+    check as _structure_check,
+)
 
 
 @dataclass
@@ -171,6 +176,51 @@ def _check_cache_gitignored(paths: Paths) -> Diagnosis:
     return Diagnosis("cache_gitignore", _OK, ".cache/ is gitignored.")
 
 
+def _check_canonical_structure(paths: Paths) -> Diagnosis:
+    """Audit the repo against the canonical structure schema.
+
+    Returns a single Diagnosis summarizing the structure check. Detail is
+    available via `dotagent structure check`.
+    """
+    result = _structure_check(paths.repo)
+    fails = [d for d in result.deviations if d.severity == _STRUCT_FAIL]
+    warns = [d for d in result.deviations if d.severity == _STRUCT_WARN]
+
+    if fails:
+        return Diagnosis(
+            name="structure",
+            status=_FAIL,
+            message=(
+                f"{len(fails)} structural failure(s); tier={result.tier} "
+                f"({fails[0].path}: {fails[0].reason})"
+            ),
+            fix="run `dotagent structure check` for full report; "
+                "then `dotagent migrate` if needs_migration is true",
+        )
+    if result.needs_migration:
+        return Diagnosis(
+            name="structure",
+            status=_WARN,
+            message=(
+                f"schema version drift: have {result.actual_version or 'none'}, "
+                f"expected {result.schema_version}"
+            ),
+            fix="run `dotagent migrate` to upgrade",
+        )
+    if warns:
+        return Diagnosis(
+            name="structure",
+            status=_WARN,
+            message=f"{len(warns)} structural warning(s); tier={result.tier}",
+            fix="run `dotagent structure check` for full report",
+        )
+    return Diagnosis(
+        name="structure",
+        status=_OK,
+        message=f"canonical structure clean (tier={result.tier})",
+    )
+
+
 def run_checks() -> list[Diagnosis]:
     """Run every check. Return a flat list of diagnoses."""
     from .paths import find_repo_root
@@ -189,6 +239,7 @@ def run_checks() -> list[Diagnosis]:
         return out
 
     cfg = Config.load(paths)
+    out.append(_check_canonical_structure(paths))
     out.append(_check_sources(paths, cfg))
     out.append(_check_hooks(paths))
     out.append(_check_episodic_index(paths))
