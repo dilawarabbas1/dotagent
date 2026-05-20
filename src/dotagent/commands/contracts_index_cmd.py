@@ -83,8 +83,41 @@ def show_cmd(fmt: str, only_open: bool, only_frozen: bool, filter_module: str | 
         click.echo("")
 
 
-@contracts_group.command(name="rebuild", help="Regenerate .agent/project/CONTRACTS.md.")
-def rebuild_cmd() -> None:
+@contracts_group.command(name="rebuild", help="Regenerate .agent/project/CONTRACTS.md (or cross-repo rollup with --all-repos).")
+@click.option("--all-repos", is_flag=True,
+              help="Walk repos[] manifest and regenerate Project-Root/contracts.md instead.")
+def rebuild_cmd(all_repos: bool) -> None:
     repo, paths, project = _load_project_or_die()
+    if all_repos:
+        from ..project.contracts_rollup import regenerate as regen_rollup
+        target = regen_rollup(paths)
+        click.echo(f"✓ wrote {target.relative_to(repo)}")
+        return
     target = regenerate(paths, project)
     click.echo(f"✓ wrote {target.relative_to(repo)}")
+
+
+@contracts_group.command(name="rollup", help="Print the cross-repo contracts rollup (Tier 1).")
+@click.option("--format", "fmt", type=click.Choice(["text", "json", "markdown"]), default="text")
+def rollup_cmd(fmt: str) -> None:
+    from ..project.contracts_rollup import build_rollup, render_markdown
+    _, paths, _ = _load_project_or_die()
+    rollup = build_rollup(paths)
+    if fmt == "json":
+        click.echo(json.dumps(rollup.to_dict(), indent=2))
+        return
+    if fmt == "markdown":
+        click.echo(render_markdown(rollup))
+        return
+    click.echo(f"project:      {rollup.project_name}")
+    click.echo(f"generated:    {rollup.generated_at}")
+    click.echo(f"open total:   {rollup.total_open}")
+    click.echo(f"frozen total: {rollup.total_frozen}")
+    click.echo("")
+    if not rollup.repos:
+        click.echo("no repos[] manifest declared.")
+        return
+    for r in rollup.repos:
+        click.echo(f"  {r.id:20s}  role={r.role or '—':12s}  open={r.open}  frozen={r.frozen}")
+        if r.error:
+            click.echo(f"      error: {r.error}")
