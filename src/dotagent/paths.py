@@ -151,6 +151,27 @@ class Paths:
     def project_modules(self) -> Path:
         return self.project_dir / "modules"
 
+    @property
+    def plan_negotiations_dir(self) -> Path:
+        """Parent dir for every plan-negotiation session."""
+        return self.project_dir / "plan-negotiations"
+
+    def plan_negotiation_session_dir(self, n: int) -> Path:
+        return self.plan_negotiations_dir / f"{n:02d}"
+
+    def plan_draft_path(self, n: int) -> Path:
+        return self.plan_negotiation_session_dir(n) / "plan.draft.yaml"
+
+    def plan_negotiation_log(self, n: int) -> Path:
+        return self.plan_negotiation_session_dir(n) / "negotiation-log.md"
+
+    def plan_round_dir(self, n: int) -> Path:
+        return self.plan_negotiation_session_dir(n) / "rounds"
+
+    @property
+    def plan_frozen(self) -> Path:
+        return self.project_dir / "plan.frozen.yaml"
+
     def module_dir(self, module_id: str) -> Path:
         return self.project_modules / module_id
 
