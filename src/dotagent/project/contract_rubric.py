@@ -1,12 +1,12 @@
-"""Contract scoring rubric (Phase 9).
+"""Contract scoring rubric.
 
-Grades a `contract.md` against a 10-signal rubric (0-3 each, 30 total). Used
-by both Claude (dev) and Codex (QA) after each negotiate round to refuse
-convergence below a threshold (typically 27/30).
+Grades a `contract.md` against an 11-signal rubric (0-3 each, 33 total).
+Used by both Claude (dev) and Codex (QA) after each negotiate round to
+refuse convergence below a threshold (typically 30/33).
 
 The score is a **stateless** computation over the contract body. dotagent
 does not persist it — Coda's orchestrator owns score persistence and the
-"refuse convergence below 27" enforcement. This module just answers the
+"refuse convergence below 30" enforcement. This module just answers the
 question "what's this contract's grade right now?"
 
 ## Signal map (S1..S11)
@@ -36,10 +36,10 @@ from dataclasses import asdict, dataclass, field
 
 # ---- Bands ----------------------------------------------------------------
 
-BAND_READY = "ready"        # 27-30
-BAND_POLISH = "polish"      # 22-26
-BAND_REWORK = "rework"      # 16-21
-BAND_NOT_READY = "not_ready"  # 0-15
+BAND_READY = "ready"        # 30-33
+BAND_POLISH = "polish"      # 24-29
+BAND_REWORK = "rework"      # 18-23
+BAND_NOT_READY = "not_ready"  # 0-17
 
 SIGNAL_MAX = 3
 TOTAL_MAX = 33
