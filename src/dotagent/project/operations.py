@@ -26,6 +26,15 @@ from .handoff import (
     render_module_plan,
     render_scope,
 )
+
+
+def _load_brief(paths: Paths):
+    """Best-effort load of project_brief.md. Returns None on any failure."""
+    try:
+        from .brief import load as _load_brief_file
+        return _load_brief_file(paths.project_brief)
+    except Exception:  # noqa: BLE001
+        return None
 from .model import (
     Cycle,
     Module,
@@ -50,7 +59,7 @@ class ProjectError(Exception):
 def init_project(paths: Paths, project: Project) -> None:
     """Persist a freshly-built project (from the scope builder)."""
     save_project(paths, project)
-    write_text(paths.project_scope_md, render_scope(project))
+    write_text(paths.project_scope_md, render_scope(project, brief=_load_brief(paths)))
     _record_event(paths, kind="project_init", summary=f"project '{project.name}' initialized")
 
 
@@ -67,7 +76,7 @@ def add_module(paths: Paths, project: Project, module: Module) -> None:
     paths.module_dir(module.id).mkdir(parents=True, exist_ok=True)
     save_module(paths, module)
     write_text(paths.module_plan_md(module.id), render_module_plan(module))
-    write_text(paths.project_scope_md, render_scope(project))
+    write_text(paths.project_scope_md, render_scope(project, brief=_load_brief(paths)))
     _record_event(paths, kind="module_added",
                   summary=f"module {module.id} ({module.name}) planned")
     # Auto-regenerate downstream indexes

@@ -297,6 +297,73 @@ def cmd_next() -> None:
         click.echo(f"  ship: `dotagent project resolve {mod.id}`")
 
 
+@project_group.command(
+    name="regenerate",
+    help="Refresh derived files (SCOPE.md, CONTRACTS.md, brief Modules table) without changing state.",
+)
+@click.option("--dry-run", is_flag=True, help="Report what would be written; touch nothing.")
+def cmd_regenerate(dry_run: bool) -> None:
+    """Safe regenerate of project-tier derived files.
+
+    Reads current state from disk; rewrites only generated files. Never
+    touches plan.yaml, module.yaml, contract.md, the brief, or anything
+    in docs/. Use after a `dotagent update` to refresh files whose
+    generators changed shape.
+    """
+    paths = _paths()
+    project = require_project(paths)
+    brief = _load_brief_for_regen(paths)
+
+    written: list[str] = []
+
+    # SCOPE.md
+    scope_path = paths.project_scope_md
+    new_scope = render_scope(project, brief=brief)
+    if dry_run:
+        written.append(str(scope_path.relative_to(paths.repo)) + "  (preview)")
+    else:
+        write_text(scope_path, new_scope)
+        written.append(str(scope_path.relative_to(paths.repo)))
+
+    # CONTRACTS.md (per-repo dashboard)
+    try:
+        from ..project.contracts_index import regenerate as _regen_contracts
+        if dry_run:
+            written.append(".agent/project/CONTRACTS.md  (preview)")
+        else:
+            target = _regen_contracts(paths, project)
+            written.append(str(target.relative_to(paths.repo)))
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! CONTRACTS.md regen failed: {exc}", err=True)
+
+    # Brief Modules table (between anchors)
+    try:
+        from ..project.brief import regenerate_brief_modules
+        if dry_run:
+            written.append(".agent/project_brief.md  (modules-table only, preview)")
+        else:
+            if regenerate_brief_modules(paths):
+                written.append(".agent/project_brief.md  (modules-table only)")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! brief modules-table regen failed: {exc}", err=True)
+
+    label = "would write" if dry_run else "wrote"
+    click.echo(f"✓ {label} {len(written)} file(s):")
+    for w in written:
+        click.echo(f"  · {w}")
+    if dry_run:
+        click.echo("\n[--dry-run] nothing was actually written.")
+
+
+def _load_brief_for_regen(paths):
+    """Best-effort brief load for the regenerate command."""
+    try:
+        from ..project.brief import load
+        return load(paths.project_brief)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # ---- Pre-build contract subgroup -------------------------------------------
 # Registers `dotagent project contract ...` lazily at import time so the
 # subgroup lives alongside the existing project verbs without touching cli.py.

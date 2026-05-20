@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-05-20
+
+### Added
+- **`dotagent project regenerate`** — safe command to refresh all
+  derived project files (`SCOPE.md`, `CONTRACTS.md`, brief Modules
+  table) WITHOUT changing project state. Fills the gap noted in user
+  audit: previously the only way to refresh `SCOPE.md` was a project
+  state change (add-module / start / etc.). Supports `--dry-run`.
+
+### Fixed
+- **`render_scope()` falls back to brief data** when plan.yaml lacks
+  top-level `name` / `goal` / `description` / `out_of_scope` /
+  `success_criteria` (common in layered-tier plan.yaml). Previously a
+  regenerate would HOLLOW the file because render_scope read only from
+  project fields. Now falls back to brief.name / brief.vision /
+  brief.non_goals / brief.success_metrics. If both are absent, writes
+  `(unset — add X)` markers instead of empty content.
+- **Traceability audit unions both FEAT sources.**
+  `audit_feat_to_module` now accepts both `module.yaml::implements_features`
+  AND `plan.yaml::features_to_modules`. Previously it only read the
+  per-module field, so layered-tier plan.yaml shapes where the mapping
+  lives only at the project level reported every FEAT as unmapped.
+- **Frozen contracts get info, not fail, for missing FEAT-NN.**
+  `ContractRef.is_frozen` flag downgrades the
+  `contract-no-feat` finding to `frozen-contract-no-feat` info. Frozen
+  contracts are immutable historical artifacts; demanding edits to
+  restore traceability is the wrong shape. Live contracts still fail
+  loud.
+- Tests: +12 in `tests/project/test_aigent_audit_scenario.py` end-to-end
+  covering the exact failure modes from the user audit.
+
 ## [0.4.4] — 2026-05-20
 
 ### Fixed
