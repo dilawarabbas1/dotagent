@@ -307,6 +307,37 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
                 category=CAT_PRIORITIES,
                 when_to_read="Open + frozen contracts dashboard for THIS service."),
 
+    # Modules + cycle artifacts (the contract layer for this service)
+    SchemaEntry(".agent/project/modules", required=False, kind=KIND_DIR,
+                category=CAT_CONTRACTS,
+                when_to_read=(
+                    "Per-module directories. Each module: module.yaml + PLAN.md + cycles/. "
+                    "If `module.yaml` declares `cross_module: <project-root-module>`, this "
+                    "is a SLICE of a cross-service module — coordinate via the parent's "
+                    "cycle contract."
+                )),
+    SchemaEntry(".agent/project/modules/<id>/module.yaml", required=False, kind=KIND_FILE,
+                category=CAT_CONTRACTS,
+                when_to_read="Module state, implements_features, cross_module reference, cycles[]."),
+    SchemaEntry(".agent/project/modules/<id>/PLAN.md", required=False, kind=KIND_GENERATED,
+                category=CAT_CONTRACTS,
+                when_to_read="Human-readable module plan (generated from module.yaml)."),
+    SchemaEntry(".agent/project/modules/<id>/cycles/<NN>/contract.md", required=False, kind=KIND_FILE,
+                category=CAT_CONTRACTS,
+                when_to_read="LIVE contract under dev↔QA negotiation. Cite FEAT-NN + OBJ-NN in business-traceability."),
+    SchemaEntry(".agent/project/modules/<id>/cycles/<NN>/contract.frozen.md", required=False, kind=KIND_GENERATED,
+                category=CAT_CONTRACTS,
+                when_to_read="IMMUTABLE post-freeze snapshot. Never edit. The agreement you implement against."),
+    SchemaEntry(".agent/project/modules/<id>/cycles/<NN>/dev-handoff.md", required=False, kind=KIND_FILE,
+                category=CAT_CONTRACTS,
+                when_to_read="Dev says 'done' — written via `dotagent project handoff`. QA reads this next."),
+    SchemaEntry(".agent/project/modules/<id>/cycles/<NN>/qa-findings.md", required=False, kind=KIND_FILE,
+                category=CAT_CONTRACTS,
+                when_to_read="QA pass/fail with MANDATORY rationale — written via `dotagent project qa-record`."),
+    SchemaEntry(".agent/project/modules/<id>/completion.md", required=False, kind=KIND_FILE,
+                category=CAT_CONTRACTS,
+                when_to_read="Post-ship summary (added after `dotagent project resolve`)."),
+
     SchemaEntry("docs", required=False, kind=KIND_DIR,
                 description="Service-owned source docs.",
                 category=CAT_HIDDEN),
@@ -337,6 +368,69 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".github/copilot-instructions.md", required=False, kind=KIND_GENERATED,
                 category=CAT_GENERATED_ADAPTERS,
                 when_to_read="Same body as CLAUDE.md — GitHub Copilot reads this."),
+
+    # ─── INHERITED FROM PROJECT ROOT ─────────────────────────────────────
+    # This service is a CHILD of the layered project root (typically `..`).
+    # These pointers reference the parent layer; they hold cross-cutting
+    # context that applies to every service in the project.
+    SchemaEntry("../.agent/project_brief.md", required=False, kind=KIND_FILE,
+                category=CAT_MUST_READ,
+                when_to_read="INHERITED · business intent (OBJ/FEAT/RULE) for the WHOLE project."),
+    SchemaEntry("../.agent/rules.md", required=False, kind=KIND_FILE,
+                category=CAT_MUST_READ,
+                when_to_read="INHERITED · project-wide hard rules. Your service rules ADD; never override these."),
+    SchemaEntry("../.agent/git.md", required=False, kind=KIND_GENERATED,
+                category=CAT_MUST_READ,
+                when_to_read="INHERITED · branch policy + push rules for the meta repo. Read before any push."),
+    SchemaEntry("../.agent/architecture.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read="INHERITED · whole-project technical architecture (concise)."),
+    SchemaEntry("../.agent/style.md", required=False, kind=KIND_FILE,
+                category=CAT_STYLE,
+                when_to_read="INHERITED · project-wide style baseline. Your service style overrides where it disagrees."),
+    SchemaEntry("../.agent/patterns.md", required=False, kind=KIND_FILE,
+                category=CAT_STYLE,
+                when_to_read="INHERITED · project-wide patterns."),
+    SchemaEntry("../.agent/git.yaml", required=False, kind=KIND_FILE,
+                category=CAT_CONFIG,
+                when_to_read="INHERITED · git topology + branch rules (source of truth for git.md)."),
+    SchemaEntry("../.agent/project/plan.yaml", required=False, kind=KIND_FILE,
+                category=CAT_PROJECT_PLAN,
+                when_to_read="INHERITED · PROJECT-WIDE plan: features_to_modules, repos manifest, FEAT-OBJ links."),
+    SchemaEntry("../.agent/project/SCOPE.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PROJECT_PLAN,
+                when_to_read="INHERITED · human-readable project blueprint."),
+    SchemaEntry("../.agent/project/CONTRACTS.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read="INHERITED · project-root tier contracts dashboard (cross-service modules)."),
+    SchemaEntry("../contracts.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read="INHERITED · Tier-1 cross-repo contracts rollup. See all services' state at a glance."),
+    SchemaEntry("../.agent/project/modules", required=False, kind=KIND_DIR,
+                category=CAT_CONTRACTS,
+                when_to_read=(
+                    "INHERITED · CROSS-SERVICE modules at the project-root tier. "
+                    "If your service has a slice (module.yaml has `cross_module: ...`), "
+                    "the parent's cycle contract is the authoritative agreement."
+                )),
+    SchemaEntry("../docs/service-registry.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read="INHERITED · what each service in this project does. Start here when navigating to a sibling."),
+    SchemaEntry("../docs/shared-contracts.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read="INHERITED · API/event schemas BETWEEN services. Update when changing cross-service contracts."),
+    SchemaEntry("../docs/dependency-map.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read="INHERITED · CROSS-SERVICE dependency graph."),
+    SchemaEntry("../docs/architecture.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read="INHERITED · whole-project architecture (long form)."),
+    SchemaEntry("../docs/bug-registry.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read="INHERITED · cross-service bugs (AGT-####). Your BE-#### bugs may cross-ref these."),
+    SchemaEntry("../docs/anti-patterns.md", required=False, kind=KIND_FILE,
+                category=CAT_ANTI_PATTERNS,
+                when_to_read="INHERITED · project-wide anti-patterns."),
 )
 
 
