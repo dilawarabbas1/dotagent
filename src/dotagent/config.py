@@ -80,6 +80,14 @@ DEFAULT_CONFIG: dict = {
         "id_prefix": "",
         "cross_reference_prefixes": [],
     },
+    # Render strategy for adapter files (CLAUDE.md, .cursorrules, etc.).
+    # When `use_manifest: true`, dotagent emits the v0.5.0+ navigation manifest
+    # (schema-driven, ~3K tokens, pointer-based). When `false` (default during
+    # v0.4.x), emits the legacy compendium (~50-100K tokens, content embedded).
+    # Flip to true to opt into the new design; default becomes true at v0.5.0.
+    "render": {
+        "use_manifest": False,
+    },
 }
 
 
