@@ -277,7 +277,8 @@ class Module:
                 contract=Contract.from_dict(cd.get("contract")),
             ))
         return cls(
-            id=d["id"], name=d["name"],
+            id=d.get("id") or "",
+            name=d.get("name") or d.get("id") or "",
             state=d.get("state", ModuleState.DEFINED),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),
@@ -342,7 +343,12 @@ class Project:
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
         return cls(
-            name=d["name"], goal=d.get("goal", ""),
+            # Tolerate plan.yaml files without an explicit `name:` (the new
+            # layered-tier shape sometimes omits it because the manifest
+            # has its own per-repo names). Empty string is fine — callers
+            # fall back to the directory name when rendering.
+            name=d.get("name") or "",
+            goal=d.get("goal", ""),
             description=d.get("description", ""),
             out_of_scope=list(d.get("out_of_scope") or []),
             success_criteria=list(d.get("success_criteria") or []),
