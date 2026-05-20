@@ -25,6 +25,7 @@ def render_body(ctx: Context, *, tool_label: str = "AI coding agent") -> str:
     parts.append(f"# Project context for {tool_label} — `{ctx.project_name}`")
     parts.append("")
     parts.append(_render_overview(ctx))
+    parts.append(_render_brief_excerpt(ctx))
     parts.append(_render_project(ctx))
     parts.append(_render_conflicts(ctx))
     parts.append(_render_stale_rules_warning(ctx))
@@ -503,3 +504,126 @@ def coerce_to_context(arg: Any, paths) -> Context:
             config_top_n={},
         )
     raise TypeError(f"Unsupported adapter source: {type(arg)!r}")
+
+
+# ---------------------------------------------------------------------------
+# PR #7: brief excerpt — selective embed of project_brief.md
+# ---------------------------------------------------------------------------
+
+def _render_brief_excerpt(ctx: Context) -> str:
+    """Render the structured subset of project_brief.md.
+
+    Selective rule:
+    - All OBJ-IDs + titles (every repo sees the project objectives)
+    - All FEAT-IDs + names (filtered to this-repo's modules once the
+      layered structure ships in PR #11; today: all features)
+    - All hard rules (RULE-NN) — project-wide enforcement
+    - Glossary, tenancy, non-goals (project-wide)
+
+    Returns empty string when there's no brief — preserving v0.3 behavior.
+    """
+    brief = getattr(ctx, "brief", None)
+    if brief is None:
+        return ""
+
+    lines: list[str] = ["## Project context (from `.agent/project_brief.md`)"]
+    meta_bits = []
+    if brief.brief_version:
+        meta_bits.append(f"brief version {brief.brief_version}")
+    if brief.last_reviewed:
+        meta_bits.append(f"last reviewed {brief.last_reviewed}")
+    if brief.stage:
+        meta_bits.append(f"stage: {brief.stage}")
+    if meta_bits:
+        lines.append("")
+        lines.append("_" + " · ".join(meta_bits) + "_")
+
+    if brief.vision:
+        lines.append("")
+        lines.append(f"**Vision:** {brief.vision}")
+
+    if brief.objectives:
+        lines.append("")
+        lines.append("**Business objectives:**")
+        for o in brief.objectives:
+            lines.append(f"- **{o.id}**: {o.text}")
+
+    if brief.features:
+        repo_features = _features_for_this_repo(ctx, brief)
+        lines.append("")
+        lines.append(f"**Features implemented here ({len(repo_features)}):**")
+        for f in repo_features:
+            serves = ", ".join(f.serves) if f.serves else "(none)"
+            lines.append(f"- **{f.id}** ({f.name}) — serves {serves}")
+            if f.expected_outcome:
+                lines.append(f"  · _outcome: {f.expected_outcome}_")
+
+    if brief.hard_rules:
+        lines.append("")
+        lines.append("**Hard rules (do not violate):**")
+        for r in brief.hard_rules:
+            why = f" — _why: {r.why}_" if r.why else ""
+            lines.append(f"- **{r.id} · {r.name}**{why}")
+
+    if brief.tenancy_lines:
+        lines.append("")
+        lines.append("**Tenancy & security posture:**")
+        for line in brief.tenancy_lines:
+            lines.append(f"- {line}")
+
+    if brief.non_goals:
+        lines.append("")
+        lines.append("**Non-goals (do NOT propose work in these areas):**")
+        for ng in brief.non_goals:
+            lines.append(f"- {ng}")
+
+    if brief.constraints:
+        lines.append("")
+        lines.append("**Constraints:**")
+        for c in brief.constraints:
+            lines.append(f"- {c}")
+
+    if brief.glossary:
+        lines.append("")
+        lines.append("**Glossary:**")
+        for term, defn in brief.glossary:
+            lines.append(f"- **{term}** — {defn}")
+
+    if brief.integrations:
+        lines.append("")
+        lines.append("**External integrations:**")
+        for it in brief.integrations:
+            used = ", ".join(it.used_by) if it.used_by else "(none)"
+            lines.append(
+                f"- **{it.vendor}** — {it.purpose or '(no purpose)'} · "
+                f"used by {used} · auth: {it.auth or 'n/a'}"
+            )
+
+    lines.append("")
+    lines.append("_Full brief: `.agent/project_brief.md`. "
+                 "Hand-written; rarely changes. Re-render with `dotagent sync`._")
+    return "\n".join(lines)
+
+
+def _features_for_this_repo(ctx: Context, brief) -> list:
+    """Filter brief.features to those implemented by THIS repo's modules.
+
+    Filter rule:
+    - If the project plan declares `features_to_modules`, use it as the
+      authority: feature included iff any module mapped to it lives in
+      this repo (modules in the project_plan implicitly do).
+    - Otherwise, return all features (single-repo / unconfigured case).
+    """
+    if not getattr(ctx, "project_plan", None):
+        return list(brief.features)
+    proj = ctx.project_plan
+    f2m = getattr(proj, "features_to_modules", None) or {}
+    if not f2m:
+        # No mapping yet — surface all features so nothing's hidden.
+        return list(brief.features)
+    relevant_feat_ids: set[str] = set()
+    local_module_ids = set(getattr(proj, "module_ids", None) or [])
+    for feat_id, module_ids in f2m.items():
+        if any(m in local_module_ids for m in module_ids):
+            relevant_feat_ids.add(feat_id)
+    return [f for f in brief.features if f.id in relevant_feat_ids] or list(brief.features)
