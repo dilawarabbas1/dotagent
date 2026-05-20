@@ -91,10 +91,10 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
     # Git layout config (optional until layered structure is used)
     SchemaEntry(".agent/git.yaml", required=False, kind=KIND_FILE,
                 description="Defines meta repo + service repos + branch rules.",
-                since="0.7.0"),
+                since="0.4.0"),
     SchemaEntry(".agent/git.md", required=False, kind=KIND_GENERATED,
                 description="Human dashboard for git.yaml.",
-                since="0.7.0"),
+                since="0.4.0"),
 
     # Memory layers
     SchemaEntry(".agent/memory", required=True, kind=KIND_DIR,
@@ -113,7 +113,7 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
                 description="Human-readable plan summary."),
     SchemaEntry(".agent/project/CONTRACTS.md", required=False, kind=KIND_GENERATED,
                 description="Per-repo contracts dashboard.",
-                since="0.5.0"),
+                since="0.4.0"),
     SchemaEntry(".agent/project/modules", required=False, kind=KIND_DIR,
                 description="Cross-service modules at this tier."),
 
@@ -128,7 +128,7 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".github/copilot-instructions.md", required=False, kind=KIND_GENERATED),
     SchemaEntry("contracts.md", required=False, kind=KIND_GENERATED,
                 description="Cross-repo contracts rollup (Tier 1).",
-                since="0.6.0"),
+                since="0.4.0"),
 )
 
 
@@ -158,7 +158,7 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".agent/project/plan.yaml", required=False, kind=KIND_FILE,
                 description="Service-local plan slice."),
     SchemaEntry(".agent/project/CONTRACTS.md", required=False, kind=KIND_GENERATED,
-                since="0.5.0"),
+                since="0.4.0"),
 
     SchemaEntry("docs", required=False, kind=KIND_DIR,
                 description="Service-owned source docs."),
@@ -193,7 +193,7 @@ _SINGLE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".agent/project", required=False, kind=KIND_DIR),
     SchemaEntry(".agent/project/plan.yaml", required=False, kind=KIND_FILE),
     SchemaEntry(".agent/project/CONTRACTS.md", required=False, kind=KIND_GENERATED,
-                since="0.5.0"),
+                since="0.4.0"),
 
     SchemaEntry("docs", required=False, kind=KIND_DIR),
 
