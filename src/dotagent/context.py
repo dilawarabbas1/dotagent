@@ -48,6 +48,8 @@ class Context:
     # Phase 8: project management
     project_plan: object | None = None       # dotagent.project.Project | None
     project_active_module_id: str = ""
+    # PR #7: brief subset for selective embed in CLAUDE.md
+    brief: object | None = None              # dotagent.project.brief.Brief | None
 
     # ---- helpers for adapters ---------------------------------------------
 
@@ -322,6 +324,15 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
         from .logging import log_exception
         log_exception("project context load failed", e)
 
+    # PR #7: load project_brief.md if present (best-effort)
+    brief = None
+    try:
+        from .project.brief import load as load_brief
+        brief = load_brief(paths.project_brief)
+    except Exception as e:  # noqa: BLE001
+        from .logging import log_exception
+        log_exception("brief load failed", e)
+
     return Context(
         project_name=project_name,
         actor=actor,
@@ -335,4 +346,5 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
         config_top_n=top_n,
         project_plan=project_plan,
         project_active_module_id=active_mid,
+        brief=brief,
     )
