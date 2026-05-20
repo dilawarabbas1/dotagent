@@ -383,7 +383,7 @@ def init_contract(paths: Paths, module: Module) -> Contract:
         last_actor=ACTOR_DEV,
     )
     cycle.contract = contract
-    _regenerate_contracts_index(paths)
+    _regenerate_contracts_index(paths, module=module)
     return contract
 
 
@@ -539,7 +539,7 @@ def advance_round(
         body = body.rstrip() + "\n" + log_line
         path.write_text(body)
 
-    _regenerate_contracts_index(paths)
+    _regenerate_contracts_index(paths, module=module)
     return cycle.contract
 
 
@@ -700,23 +700,32 @@ def freeze_contract(
         snapshot.chmod(0o444)  # read-only for everyone
     except OSError:
         pass  # best-effort; permission may be denied on some filesystems
-    _regenerate_contracts_index(paths)
+    _regenerate_contracts_index(paths, module=module)
     return snapshot
 
 
-def _regenerate_contracts_index(paths: Paths) -> None:
-    """Best-effort regeneration of .agent/project/CONTRACTS.md.
+def _regenerate_contracts_index(paths: Paths, module: Module | None = None) -> None:
+    """Best-effort regeneration of .agent/project/CONTRACTS.md AND the
+    auto-section inside .agent/project_brief.md.
 
     Called from init_contract / advance_round / freeze_contract. Silent
     on failure — the contract op itself is the user's primary concern.
+
+    If `module` is provided, its in-memory state is merged into the loaded
+    project so the regen reflects un-saved changes (init_contract attaches
+    the contract in-memory; CLI saves afterwards).
     """
     try:
         from .contracts_index import regenerate as _regen
         from .model import load_project
+        from .brief import regenerate_brief_modules
         project = load_project(paths)
         if project is None:
             return
+        if module is not None and module.id in project.modules:
+            project.modules[module.id] = module
         _regen(paths, project)
+        regenerate_brief_modules(paths)
     except Exception as exc:  # noqa: BLE001
         from ..logging import log_exception
         log_exception("contracts_index regenerate failed", exc)

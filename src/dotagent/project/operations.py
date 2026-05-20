@@ -70,6 +70,15 @@ def add_module(paths: Paths, project: Project, module: Module) -> None:
     write_text(paths.project_scope_md, render_scope(project))
     _record_event(paths, kind="module_added",
                   summary=f"module {module.id} ({module.name}) planned")
+    # Auto-regenerate downstream indexes
+    try:
+        from .contracts_index import regenerate as _regen_contracts
+        from .brief import regenerate_brief_modules
+        _regen_contracts(paths, project)
+        regenerate_brief_modules(paths)
+    except Exception as exc:  # noqa: BLE001
+        from ..logging import log_exception
+        log_exception("add_module index regen failed", exc)
 
 
 # ---- State transitions ------------------------------------------------------

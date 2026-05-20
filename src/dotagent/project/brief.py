@@ -567,9 +567,75 @@ def replace_modules_section(text: str, new_section_body: str) -> str:
     return before + "\n" + new_section_body.rstrip() + "\n" + after
 
 
+def render_modules_table(project) -> str:
+    """Render the auto-generated modules table from a Project object.
+
+    Section content only (no anchors). Used by `regenerate_brief_modules()`.
+    """
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    lines = [
+        "## Modules & delivery status",
+        "",
+        "<!-- GENERATED from plan.yaml + module.yaml. Do not edit. -->",
+        f"<!-- Last regenerated: {now_iso} -->",
+        "",
+    ]
+    modules = list(getattr(project, "modules", {}).values())
+    if not modules:
+        lines.append("_No modules defined yet. Run `dotagent project add-module`._")
+        return "\n".join(lines)
+
+    lines.append("| Module | Implements | State | Owner | Deps | Cross-module |")
+    lines.append("|---|---|---|---|---|---|")
+    for m in modules:
+        feats = ", ".join(getattr(m, "implements_features", []) or []) or "—"
+        deps = ", ".join((getattr(m, "plan", None) and m.plan.dependencies) or []) or "—"
+        cross = getattr(m, "cross_module", "") or "—"
+        owner = "—"  # owner field not yet on Module; PR #11+ may add
+        lines.append(
+            f"| **{m.id}** | {feats} | {m.state} | {owner} | {deps} | {cross} |"
+        )
+    lines.append("")
+    lines.append("**State legend:** defined · planned · in_progress · dev_complete · qa_passed · shipped · blocked")
+    return "\n".join(lines)
+
+
+def regenerate_brief_modules(paths) -> bool:
+    """Best-effort: rewrite the modules section in project_brief.md.
+
+    Returns True iff the brief was updated. Silent on every failure path
+    (brief missing, project missing, IO error) so callers from contract
+    hooks can fire-and-forget.
+    """
+    try:
+        from .model import load_project
+    except ImportError:
+        return False
+    brief_path = paths.project_brief
+    if not brief_path.exists():
+        return False
+    try:
+        project = load_project(paths)
+    except Exception:
+        return False
+    if project is None:
+        return False
+    try:
+        existing = brief_path.read_text()
+        section_body = render_modules_table(project)
+        updated = replace_modules_section(existing, section_body)
+        if updated != existing:
+            brief_path.write_text(updated)
+        return True
+    except OSError:
+        return False
+
+
 __all__ = (
     "Brief", "Objective", "Feature", "HardRule", "Integration",
     "BRIEF_STUB",
     "render_stub", "parse", "load", "write_stub",
     "replace_modules_section",
+    "render_modules_table", "regenerate_brief_modules",
 )

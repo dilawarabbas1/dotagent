@@ -93,11 +93,16 @@ def test_contracts_md_auto_regenerated_on_init_contract(tmp_path: Path):
     paths = setup_repo(tmp_path)
     _, module = make_project_with_module(paths)
     target = paths.project_dir / "CONTRACTS.md"
-    assert not target.exists()
+    # PR #10 onwards: CONTRACTS.md is generated at add_module too.
+    # Empty (no cycles yet) state present.
+    assert target.exists()
+    before = target.read_text()
+    assert "0 open" in before
 
     init_contract(paths, module)
-    assert target.exists()
-    assert "Contracts in" in target.read_text()
+    after = target.read_text()
+    assert "1 open" in after
+    assert "Contracts in" in after
 
 
 def test_contracts_md_updates_on_freeze(tmp_path: Path):
