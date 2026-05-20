@@ -33,6 +33,7 @@ from ..canonical_structure import (
     CAT_CONTRACTS,
     CAT_DATA_LAYER,
     CAT_DREAM,
+    CAT_FEATURE_DOCS,
     CAT_GENERATED_ADAPTERS,
     CAT_HIDDEN,
     CAT_MEMORY_EPISODIC,
@@ -40,6 +41,7 @@ from ..canonical_structure import (
     CAT_MEMORY_SEMANTIC,
     CAT_MEMORY_WORKING,
     CAT_MUST_READ,
+    CAT_OPS,
     CAT_PLAN_NEGOTIATION,
     CAT_PRIORITIES,
     CAT_PROJECT_PLAN,
@@ -65,6 +67,7 @@ from .workflow import HARD_POLICY, HOW_TO_READ_PROTOCOL, WORKFLOW_CONTRACT_TEMPL
 _CATEGORY_RENDER_ORDER: tuple[tuple[str, str], ...] = (
     # (category, section header line)
     (CAT_BUSINESS_INTENT,    "## 🎯 Business intent"),
+    (CAT_FEATURE_DOCS,       "## 📑 Feature documentation (hand-maintained)"),
     (CAT_PROJECT_PLAN,       "## 📋 What's planned"),
     (CAT_PRIORITIES,         "## ⏰ What's active right now"),
     (CAT_CONTRACTS,          "## 📜 Active contracts + cycles"),
@@ -82,9 +85,29 @@ _CATEGORY_RENDER_ORDER: tuple[tuple[str, str], ...] = (
     (CAT_DREAM,              "## 💭 Auto-Dream pipeline"),
     (CAT_SKILLS,             "## 🧰 Skills"),
     (CAT_TOOLS_DEFS,         "## 🧰 Tools"),
+    (CAT_OPS,                "## 🔧 Operations (hand-maintained — processes, deps, tuning)"),
     (CAT_CONFIG,             "## ⚙️ Configuration"),
     (CAT_GENERATED_ADAPTERS, "## 🔗 Sister AI tools (same body, different filename)"),
 )
+
+
+# Optional prefix paragraph rendered BETWEEN the section header and the
+# bullet list for specific categories. Use when the category itself needs
+# a "how to navigate" callout, not just a flat list of file pointers.
+_CATEGORY_PREFACE: dict[str, str] = {
+    CAT_FEATURE_DOCS: (
+        "**Entry point for any feature work:** read `docs/feature_master.md` "
+        "first (the FM-### index), then open the matching "
+        "`docs/feature_master/FM-###-<slug>.md` for that feature's contract, "
+        "design rationale, invariants, and files (host · route · db→ · redis→ · "
+        "external). From there, follow file-path references into the deep "
+        "registries below."
+    ),
+    CAT_OPS: (
+        "**Hand-maintained operational reference.** dotagent never generates or "
+        "overwrites these. Read for deploy / on-call / incident-response context."
+    ),
+}
 
 
 _CHAIN_DIAGRAM = """\
@@ -176,7 +199,7 @@ def render_manifest(paths: Paths, tier: str | None = None) -> str:
         entries = by_category.get(category, [])
         if not entries:
             continue
-        sections.append(_render_category_section(header, entries))
+        sections.append(_render_category_section(header, entries, category))
 
     # 7a. Dynamic docs/ listing — any .md files in docs/ that aren't
     # already covered by canonical schema entries.
@@ -242,9 +265,15 @@ def _render_must_read(entries: list[SchemaEntry]) -> str:
     return "\n".join(lines)
 
 
-def _render_category_section(header: str, entries: list[SchemaEntry]) -> str:
-    """Render one navigation section: header + bullet list of entries."""
+def _render_category_section(
+    header: str, entries: list[SchemaEntry], category: str = "",
+) -> str:
+    """Render one navigation section: header + (optional preface) + bullet list."""
     lines = [header, ""]
+    preface = _CATEGORY_PREFACE.get(category) if category else None
+    if preface:
+        lines.append(preface)
+        lines.append("")
     for entry in entries:
         when = entry.when_to_read or entry.description or "(no description)"
         lines.append(f"- `{entry.path}` — {when}")

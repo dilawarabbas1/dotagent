@@ -65,6 +65,8 @@ CAT_TOOLS_DEFS = "tools-defs"              # 🧰 tool definitions
 CAT_CONFIG = "config"                      # ⚙️ config + git topology
 CAT_GENERATED_ADAPTERS = "generated-adapters"  # 🔗 sister AI files
 CAT_SERVICE_REPO_LINK = "service-repo-link"    # 🎯 per-service navigation
+CAT_FEATURE_DOCS = "feature-docs"          # 📑 hand-maintained feature_master/* index
+CAT_OPS = "ops"                            # 🔧 hand-maintained docs/ops/* (processes, deps, tuning)
 CAT_HIDDEN = "hidden"                      # don't surface in CLAUDE.md
 CAT_UNCATEGORIZED = "uncategorized"        # default — fails coverage test
 
@@ -76,6 +78,7 @@ ALL_CATEGORIES = (
     CAT_MEMORY_PERSONAL,
     CAT_DREAM, CAT_SKILLS, CAT_TOOLS_DEFS, CAT_CONFIG,
     CAT_GENERATED_ADAPTERS, CAT_SERVICE_REPO_LINK,
+    CAT_FEATURE_DOCS, CAT_OPS,
     CAT_HIDDEN, CAT_UNCATEGORIZED,
 )
 
@@ -249,6 +252,98 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry("docs/shared-contracts.md", required=False, kind=KIND_FILE,
                 category=CAT_ARCHITECTURE,
                 when_to_read="API + event schemas BETWEEN services. YOU update on cross-service contract changes."),
+
+    # ─── HAND-MAINTAINED feature documentation system ──────────────────
+    # See docs/HAND_MAINTAINED_DOCS_CONVENTION.md in the dotagent repo.
+    # dotagent NEVER generates or overwrites these — they're authored by
+    # the project team + Claude. Surfaced as navigation pointers only.
+    SchemaEntry("docs/feature_master.md", required=False, kind=KIND_FILE,
+                category=CAT_FEATURE_DOCS,
+                when_to_read=(
+                    "HAND-MAINTAINED · feature index: FM-### → name · module · FEAT · link to "
+                    "per-feature detail. **Start here when working on any feature.**"
+                )),
+    SchemaEntry("docs/feature_master/FM-<id>-<slug>.md", required=False, kind=KIND_FILE,
+                category=CAT_FEATURE_DOCS,
+                when_to_read=(
+                    "HAND-MAINTAINED · per-feature record: contract (what), design (why), "
+                    "invariants, files (host/route/db→/redis→/external)."
+                )),
+    SchemaEntry("docs/db-impact-map-master.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · deep DB dependency (master shard): file → table · field · R/W."
+                )),
+    SchemaEntry("docs/db-impact-map-tenant.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · deep DB dependency (tenant shard): file → table · field · R/W."
+                )),
+    SchemaEntry("docs/db-impact-map-vector.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · deep DB dependency (vector store): file → table · field · R/W."
+                )),
+    SchemaEntry("docs/redis-key-registry-tenant.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · Redis (tenant-scoped) deep map: key → owner · R/W · TTL."
+                )),
+    SchemaEntry("docs/redis-key-registry-global.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · Redis (global) deep map: key → owner · R/W · TTL."
+                )),
+    SchemaEntry("docs/redis-key-registry-events.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read=(
+                    "HAND-MAINTAINED · Redis (event streams) deep map: key → owner · R/W · TTL."
+                )),
+    SchemaEntry("docs/bug-registry-infrastructure.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read=(
+                    "HAND-MAINTAINED · infrastructure-layer bug history (DA-BUG-INFRA-####)."
+                )),
+    SchemaEntry("docs/bug-registry-agents.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read=(
+                    "HAND-MAINTAINED · agents-layer bug history (DA-BUG-AGT-####)."
+                )),
+    SchemaEntry("docs/bug-registry-orchestrator.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read=(
+                    "HAND-MAINTAINED · orchestrator-layer bug history (DA-BUG-ORCH-####)."
+                )),
+    SchemaEntry("docs/ARCHITECTURE.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read=(
+                    "HAND-MAINTAINED · system design narrative — the 'why' behind module + "
+                    "service boundaries. Co-exists with docs/architecture.md (case-sensitive)."
+                )),
+    SchemaEntry("docs/ops", required=False, kind=KIND_DIR,
+                category=CAT_HIDDEN),
+    SchemaEntry("docs/ops/service-registry.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · processes that must run: name · pm2 mode · port · host · "
+                    "restart policy. **NOT the same as docs/service-registry.md** (that one is "
+                    "the generated git-repo table)."
+                )),
+    SchemaEntry("docs/ops/server-dependencies.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · native packages + versions required on the host."
+                )),
+    SchemaEntry("docs/ops/tuning.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · DB / Redis / pm2 / nginx tuning: value · why · date, per env."
+                )),
+    SchemaEntry("docs/ops/tls-and-env.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · TLS certs + env-var reference. Sensitive — never echo values."
+                )),
 
     # Generated adapters + dashboards at repo root
     SchemaEntry("CLAUDE.md", required=False, kind=KIND_GENERATED,
@@ -559,6 +654,74 @@ _SINGLE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry("docs/architecture.md", required=False, kind=KIND_FILE,
                 category=CAT_ARCHITECTURE,
                 when_to_read="Long-form architecture. YOU update on system changes."),
+
+    # ─── HAND-MAINTAINED feature documentation system (same convention
+    # as project-root tier — see docs/HAND_MAINTAINED_DOCS_CONVENTION.md
+    # in the dotagent repo). dotagent NEVER generates these.
+    SchemaEntry("docs/feature_master.md", required=False, kind=KIND_FILE,
+                category=CAT_FEATURE_DOCS,
+                when_to_read=(
+                    "HAND-MAINTAINED · feature index: FM-### → name · module · FEAT · "
+                    "link to per-feature detail. **Start here when working on any feature.**"
+                )),
+    SchemaEntry("docs/feature_master/FM-<id>-<slug>.md", required=False, kind=KIND_FILE,
+                category=CAT_FEATURE_DOCS,
+                when_to_read=(
+                    "HAND-MAINTAINED · per-feature record: contract · design · invariants · "
+                    "files (host/route/db→/redis→/external)."
+                )),
+    SchemaEntry("docs/db-impact-map-master.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · DB dependency (master shard) — deep file→table·field·R/W."),
+    SchemaEntry("docs/db-impact-map-tenant.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · DB dependency (tenant shard) — deep file→table·field·R/W."),
+    SchemaEntry("docs/db-impact-map-vector.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · DB dependency (vector store) — deep file→table·field·R/W."),
+    SchemaEntry("docs/redis-key-registry-tenant.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · Redis (tenant) deep map: key → owner · R/W · TTL."),
+    SchemaEntry("docs/redis-key-registry-global.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · Redis (global) deep map: key → owner · R/W · TTL."),
+    SchemaEntry("docs/redis-key-registry-events.md", required=False, kind=KIND_FILE,
+                category=CAT_DATA_LAYER,
+                when_to_read="HAND-MAINTAINED · Redis (event streams) deep map: key → owner · R/W · TTL."),
+    SchemaEntry("docs/bug-registry-infrastructure.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read="HAND-MAINTAINED · infrastructure-layer bug history."),
+    SchemaEntry("docs/bug-registry-agents.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read="HAND-MAINTAINED · agents-layer bug history."),
+    SchemaEntry("docs/bug-registry-orchestrator.md", required=False, kind=KIND_FILE,
+                category=CAT_BUGS,
+                when_to_read="HAND-MAINTAINED · orchestrator-layer bug history."),
+    SchemaEntry("docs/ARCHITECTURE.md", required=False, kind=KIND_FILE,
+                category=CAT_ARCHITECTURE,
+                when_to_read=(
+                    "HAND-MAINTAINED · system design narrative — the 'why' behind module + "
+                    "service boundaries. Co-exists with docs/architecture.md (case-sensitive)."
+                )),
+    SchemaEntry("docs/ops", required=False, kind=KIND_DIR,
+                category=CAT_HIDDEN),
+    SchemaEntry("docs/ops/service-registry.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · processes that must run: name · pm2 mode · port · host · "
+                    "restart policy. Distinct from docs/service-registry.md (generated git-repo table)."
+                )),
+    SchemaEntry("docs/ops/server-dependencies.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read="HAND-MAINTAINED · native packages + versions required on the host."),
+    SchemaEntry("docs/ops/tuning.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read="HAND-MAINTAINED · DB/Redis/pm2/nginx tuning: value · why · date, per env."),
+    SchemaEntry("docs/ops/tls-and-env.md", required=False, kind=KIND_FILE,
+                category=CAT_OPS,
+                when_to_read=(
+                    "HAND-MAINTAINED · TLS certs + env-var reference. Sensitive — never echo values."
+                )),
 
     SchemaEntry("CLAUDE.md", required=False, kind=KIND_GENERATED,
                 category=CAT_HIDDEN),
