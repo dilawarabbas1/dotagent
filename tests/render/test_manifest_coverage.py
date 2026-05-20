@@ -169,3 +169,33 @@ def test_manifest_includes_all_categorized_section_headers(tmp_path: Path):
     ]
     for header in expected_headers:
         assert header in rendered, f"missing section header: {header!r}"
+
+
+# ---------------------------------------------------------------------------
+# Regression test for single-repo MUST READ coverage
+# (project_brief.md was missing from single-repo schema)
+# ---------------------------------------------------------------------------
+
+def test_single_repo_must_read_includes_brief(tmp_path):
+    """single-repo tier must include project_brief.md as MUST_READ.
+
+    Regression: it was missing from _SINGLE_REPO_ENTRIES; only rules.md
+    appeared in MUST READ until 0.4.7.
+    """
+    paths = _fixture_paths(tmp_path)
+    rendered = render_manifest(paths, tier=TIER_SINGLE_REPO)
+    must_read_section = rendered.split("🔴  MUST READ", 1)[1].split("---", 1)[0]
+    assert ".agent/project_brief.md" in must_read_section, (
+        "single-repo MUST READ must include project_brief.md"
+    )
+    assert ".agent/rules.md" in must_read_section
+
+
+def test_project_root_must_read_includes_git_md(tmp_path):
+    """project-root tier MUST READ should include .agent/git.md for branch policy."""
+    paths = _fixture_paths(tmp_path)
+    rendered = render_manifest(paths, tier=TIER_PROJECT_ROOT)
+    must_read_section = rendered.split("🔴  MUST READ", 1)[1].split("---", 1)[0]
+    assert ".agent/git.md" in must_read_section
+    assert ".agent/project_brief.md" in must_read_section
+    assert ".agent/rules.md" in must_read_section
