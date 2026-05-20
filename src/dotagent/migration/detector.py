@@ -14,9 +14,9 @@ from ..canonical_structure import CURRENT_SCHEMA_VERSION
 class Mode(str, Enum):
     """Install-mode classification.
 
-    These map 1:1 to the three install scenarios called out in
-    IMPLEMENTATION_PLAN.md, plus two computed states (CURRENT, UPGRADE)
-    that distinguish a clean v0.4 install from one that needs a bump.
+    Three install scenarios (FRESH / MID_PROJECT / PRE_V0_4) plus two
+    computed states (CURRENT, UPGRADE) that distinguish a clean install
+    from one that needs a schema bump.
     """
     FRESH = "fresh"                # no .git, no .agent → user should `dotagent init`
     MID_PROJECT = "mid-project"    # .git exists, no .agent → user should `dotagent init`

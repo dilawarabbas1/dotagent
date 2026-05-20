@@ -1,10 +1,7 @@
 # dotagent
 
 > **One `.agent/` folder. Every AI coding tool in sync.**
-> Bug registry, anti-patterns, DB hotspots, Redis keys, dependency map — every AI
-> agent on your team reads the same canonical context, ranked by severity, every
-> session, automatically. Plus a built-in project-management layer that tracks
-> modules through a dev ↔ QA cycle with mandatory rationale on every decision.
+> A navigation manifest that points every AI agent (Claude Code, Cursor, Copilot, OpenCode) at the same canonical context — bug registry, anti-patterns, DB hotspots, Redis keys, feature docs, ops references. Plus a dev↔QA cycle, durable business-intent capture, and a project-management layer with mandatory rationale on every decision.
 
 [![ci](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml/badge.svg)](https://github.com/dilawarabbas1/dotagent/actions/workflows/ci.yml)
 &nbsp;
@@ -14,102 +11,101 @@ Python 3.11+
 
 ---
 
-## Why
+## What it does
 
-Every AI coding agent — Claude Code, Cursor, GitHub Copilot, OpenCode — reads
-its own config file (CLAUDE.md, .cursorrules, .github/copilot-instructions.md,
-AGENTS.md). You end up maintaining the same project context in four places,
-or worse, you don't, and your agents work cold every session.
+Every AI coding agent reads its own config file (`CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `AGENTS.md`). dotagent generates all of them from a single canonical schema, with the body **identical across every tool**.
 
-dotagent fixes that. Your `docs/` directory is the single source of truth.
-dotagent indexes it, merges with four kinds of memory (working / episodic /
-semantic / personal), and renders the right config for every tool. Edit one
-file in `docs/`, run `dotagent sync`, every agent across every dev's machine
-picks it up.
-
-It's also a multi-developer + multi-AI-tool attribution system: every Edit,
-Save, and commit is recorded with `actor` (the human) and `tool` (the AI)
-fields. `dotagent who --file path/to/file` tells you which teammate touched
-it with which AI agent.
-
-And it's a project manager: define modules through an interactive Q&A,
-track them through a dev → QA cycle where documents wire the handoff in
-both directions, and ship only when QA passes with a written rationale.
-
-And it has a governance loop: **conflict detection** warns when active
-edits touch files cited by a rule, and **rule lifecycle** surfaces /
-re-rationales / retires stale conventions so the semantic layer doesn't
-rot. See [Rule Lifecycle and Conflict Detection](https://github.com/dilawarabbas1/dotagent/wiki/Rule-Lifecycle-and-Conflict-Detection)
-on the wiki.
+The body is a **navigation manifest** (~3K–40K tokens depending on schema size): four invariant layers (reading protocol · workflow contract · hard policy · navigation index) followed by schema-driven pointers at your `docs/` and `.agent/` files. Tools read the manifest first, then chase pointers on demand. No 80K-token compendia.
 
 ---
 
-## Quickstart — 30 seconds
+## Quickstart
 
 ```bash
 pipx install "git+https://github.com/dilawarabbas1/dotagent"
 cd ~/code/your-repo
-dotagent init               # zero prompts; scans, scaffolds .agent/, indexes docs/, renders CLAUDE.md
+dotagent init               # scaffolds .agent/, renders CLAUDE.md + sister adapters
 dotagent doctor             # self-check
 ```
 
-Open Claude Code (or Cursor, or VS Code with Copilot) in that repo. The
-generated `CLAUDE.md` (or `.cursorrules` / `.github/copilot-instructions.md`)
-now contains:
-
-- Top-N bugs from `docs/bug-registry.md`, severity-ranked
-- Anti-patterns to avoid
-- Database tables/columns to handle with care
-- Redis key conventions
-- Service dependency map
-- Architecture section index
-- Your personal style preferences (never leaks to teammates)
-- Current branch + recent files you've touched
-- Recent team activity filtered to those files
-- A footer pointing back to every `docs/*.md` source
-
-When you commit, the install hook adds a
-`Co-authored-by: dotagent <... actor=alice tool=claude_code>` trailer.
-Attribution survives in `git log` even on machines without dotagent.
+Open Claude Code (or Cursor, or VS Code with Copilot, or OpenCode) in that repo. The generated `CLAUDE.md` is the navigation manifest. Edit `docs/*.md` and run `dotagent sync` (or let the pre-commit hook do it).
 
 ---
 
-## What you actually edit
-
-dotagent is opinionated about *one* thing: **`docs/` is the source of truth**.
-It never writes there. The hierarchy:
+## The four layers (every CLAUDE.md, every tier)
 
 ```
-your-repo/
-├── docs/                            ← YOU edit these. dotagent indexes.
-│   ├── bug-registry.md
-│   ├── anti-patterns.md
-│   ├── redis-key-registry.md
-│   ├── db-impact-map.md
-│   ├── dependency-map.md
-│   └── architecture.md
-└── .agent/                          ← dotagent generates / manages
-    ├── config.yaml                  ← points at docs/ files above
-    ├── style.md rules.md ...        ← five project-wide source files
-    ├── memory/                      ← four memories (see below)
-    ├── skills/ tools/               ← prompts the AI runtime uses
-    └── .cache/                      ← gitignored; regenerated on sync
+Layer 1 — How to read this file      (invariant reading protocol)
+Layer 2 — Workflow contract           (invariant; carries OWNERSHIP RULE)
+Layer 3 — Hard policy                 (invariant never-violate list)
+Layer 4 — Navigation manifest         (schema-driven per tier)
 ```
 
-Plus what dotagent emits for each AI tool:
+The **OWNERSHIP RULE** is the load-bearing sentence:
+- **dotagent writes GENERATED files** (CLAUDE.md, SCOPE.md, CONTRACTS.md, git.md, PLAN.md, contract.frozen.md, contracts.md, docs/service-registry.md, .agent/dashboard.md, per-module HISTORY.md). Hand-edits get wiped on next sync.
+- **YOU write CONTENT files** (`docs/*.md` + cycle artifacts). dotagent never writes there.
+
+Files carry a `<!-- generated by dotagent -->` banner if and only if dotagent owns them.
+
+---
+
+## The three tiers
+
+dotagent recognises three project shapes; the manifest auto-adapts.
+
+| Tier | Detected by | Use case |
+|---|---|---|
+| **project-root** | `.agent/git.yaml` present | Multi-service meta repo (the parent) |
+| **service-repo** | `parent:` in `config.yaml` | A service repo inside a layered project — manifest carries `../`-prefixed `INHERITED` pointers |
+| **single-repo** | Neither | Standalone project (default for new installs) |
+
+Same renderer, schema entries differ. See [`docs/SERVICE_REPO_CLAUDE_MD.md`](docs/SERVICE_REPO_CLAUDE_MD.md) for the service-repo specifics.
+
+---
+
+## What gets generated
+
+| File | Source | Tier |
+|---|---|---|
+| `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `AGENTS.md` | canonical schema + workflow templates | any |
+| `.agent/git.md` | `.agent/git.yaml` | project-root |
+| `.agent/project/SCOPE.md` | `plan.yaml` + brief | any with plan |
+| `.agent/project/CONTRACTS.md` | walking modules + cycles | any with modules |
+| `.agent/project/modules/<id>/PLAN.md` | `module.yaml` | any with modules |
+| `.agent/project/modules/<id>/cycles/<NN>/contract.frozen.md` | post-freeze snapshot | any with cycles |
+| `.agent/project/modules/<id>/HISTORY.md` | walking cycles + completion | any with modules |
+| `.agent/dashboard.md` | project state + episodic + doc mtimes | any |
+| `contracts.md` (project-root only) | cross-repo rollup | project-root |
+| `docs/service-registry.md` (project-root only) | `git.yaml` `repos:` | project-root |
+
+Every generated file carries a `<!-- generated by dotagent · do not hand-edit -->` banner. See [`docs/DERIVED_FILES_DESIGN.md`](docs/DERIVED_FILES_DESIGN.md).
+
+---
+
+## What dotagent never writes
+
+A canonical hand-maintained documentation convention is supported (and surfaced in CLAUDE.md as navigation pointers) without ever touching the content:
 
 ```
-your-repo/
-├── CLAUDE.md                            ← Claude Code reads this
-├── .cursorrules                         ← Cursor reads this
-├── .github/copilot-instructions.md      ← GitHub Copilot reads this
-└── AGENTS.md                            ← OpenCode reads this
+docs/
+├── feature_master.md                                Entry-point feature index
+├── feature_master/FM-###-<slug>.md                  Per-feature record
+├── db-impact-map-{master,tenant,vector}.md          Deep DB dependency
+├── redis-key-registry-{tenant,global,events}.md     Deep Redis dependency
+├── anti-patterns.md                                 AP-### rules
+├── bug-registry-{infrastructure,agents,             DA-BUG history (sharded)
+│                orchestrator}.md
+├── ARCHITECTURE.md                                  System design narrative
+└── ops/
+    ├── service-registry.md                          pm2 / port / host (NOT the generated git-repo table)
+    ├── server-dependencies.md
+    ├── tuning.md
+    └── tls-and-env.md
 ```
 
-Don't hand-edit those four — they're regenerated. Edit `docs/*.md` or
-`.agent/*.md` and run `dotagent sync`.
+The single-file conventions (`docs/bug-registry.md`, `docs/redis-keys.md`, `docs/db-impact-map.md`) also work — sharded variants are additive. See [`docs/HAND_MAINTAINED_DOCS_CONVENTION.md`](docs/HAND_MAINTAINED_DOCS_CONVENTION.md) for the boundary contract.
 
-See [`examples/`](examples/) for a working sample of the `docs/` format.
+`dotagent doc-coverage --files X,Y,Z` returns the required-doc checklist for a changed-file set, severity-tagged (HARD / SUGGESTED / CHECK). See [`docs/DOC_COVERAGE_CLI.md`](docs/DOC_COVERAGE_CLI.md).
 
 ---
 
@@ -117,239 +113,137 @@ See [`examples/`](examples/) for a working sample of the `docs/` format.
 
 | Memory | When | Stored at | Shared? |
 |---|---|---|---|
-| **Working** | now (current session) | `.agent/memory/working/<actor>/current.json` | local only |
-| **Episodic** | before (every event) | `.agent/memory/episodic/YYYY/MM/DD/<actor>__<session>.jsonl` | committed (zero merge conflicts by design) |
-| **Semantic** | patterns & rules | `.agent/memory/semantic/{rules,patterns}/.../<sha>-<slug>.md` | committed (content-hashed slugs prevent collisions) |
-| **Personal** | per-actor style | `.agent/memory/personal/<actor>/profile.yaml` | per-actor, **never merged into other devs' generated configs** |
+| **Working** | now | `.agent/memory/working/<actor>/current.json` | local only |
+| **Episodic** | every event | `.agent/memory/episodic/YYYY/MM/DD/<actor>__<session>.jsonl` | committed; no merge conflicts by design |
+| **Semantic** | patterns + rules | `.agent/memory/semantic/{rules,patterns}/.../<sha>-<slug>.md` | committed; content-hashed |
+| **Personal** | per-actor style | `.agent/memory/personal/<actor>/profile.yaml` | per-actor; **never merged into other devs' adapters** |
 
-Every recorded event has `actor`, `tool`, `host`, `session` fields. Two
-teammates can write to the same file on the same day without conflicts
-because filenames namespace by actor + session.
+Every recorded event has `actor`, `tool`, `host`, `session`. Filenames namespace by actor + session → zero merge conflicts when two teammates edit the same day.
 
 ---
 
 ## Day-to-day commands
 
 ```bash
-# core
-dotagent status                       # what dotagent knows about this repo
-dotagent context                      # exactly what an AI agent sees
-dotagent context --format markdown    # full body, for piping/inspection
-dotagent sync                         # rebuild adapters from docs/ + .agent/
-dotagent sync --dry-run               # unified diff of what would change
-dotagent doctor                       # self-check; nonzero exit on fail
+# Core
+dotagent status                              # what dotagent knows about this repo
+dotagent context                             # exactly what an AI agent sees
+dotagent sync                                # rebuild adapters + derived files
+dotagent sync --dry-run                      # unified diff; no writes
+dotagent doctor                              # self-check
+dotagent update                              # self-upgrade
 
-# visibility (Phase 2)
-dotagent who --file path/to/file.py   # which devs / AI tools touched it
-dotagent timeline path/to/file.py     # edit history
+# Manifest preview
+dotagent manifest                            # render v3 manifest to stdout
+dotagent manifest --tier service-repo        # force a tier
+dotagent manifest --diff CLAUDE.md           # show what would change
+
+# Hand-maintained doc coverage
+dotagent doc-coverage --files "src/a.py,src/b.py" --format json
+dotagent doc-coverage --files ... --commit-msg "DA-BUG-INFRA-042"
+dotagent doc-coverage --files ... --severity hard       # FM-### gates only
+
+# Visibility
+dotagent who --file path/to/file.py          # who touched this file with which AI
+dotagent timeline path/to/file.py
 dotagent activity --since 7d --by alice --tool claude_code
-dotagent feed --limit 50              # team-wide stream
+dotagent feed --limit 50
 dotagent leaderboard --since 30d
 
-# tools (Phase 4)
-dotagent tool debug "<stack trace>"   # match against bugs + past failures
-dotagent tool checklist --since 14d   # pre-deploy gate
-dotagent tool memory "BUG-001"        # search the four memories
-dotagent tool pattern-extractor --write
+# Project management
+dotagent project init                        # interactive scope-builder
+dotagent project add-module "<name>"         # per-module Q&A
+dotagent project start <id>                  # open a dev cycle
+dotagent project handoff <id>                # writes cycles/<NN>/dev-handoff.md
+dotagent project qa-record <id> --result pass|fail --rationale "..."   # rationale REQUIRED
+dotagent project resolve <id>                # ship after qa-pass
+dotagent project regenerate                  # refresh derived files; no state change
+dotagent project status                      # source-of-truth completion %
 
-# skills (Phase 3) — needs ANTHROPIC_API_KEY for real runs
-dotagent skill list
-dotagent skill run plan --task "ship JWT rotation"
-dotagent skill pipeline observer plan code review --task "ship X"
+# Brief + contracts
+dotagent project brief init                  # interactive Q&A → project_brief.md
+dotagent project brief check                 # OBJ → FEAT → Module → Contract audit
+dotagent project contract round --actor <dev|qa>
+dotagent project contract score              # 11-signal rubric
+dotagent project contract freeze             # rejects on non-convergence
 
-# auto-dream (Phase 5)
-dotagent dream run --since 30d        # extract signals → candidates
-dotagent dream list                   # pending candidates
+# Auto-Dream (graduated rules)
+dotagent dream run --since 30d
 dotagent dream graduate <id> --rationale "..."   # rationale REQUIRED
-dotagent dream reject   <id> --rationale "..."   # rationale REQUIRED
-dotagent dream cron-install           # daily 02:00 UTC
-dotagent dream github-action          # write nightly PR workflow
+dotagent dream reject   <id> --rationale "..."
 
-# rule lifecycle (Phase 8 — added 0.3.0)
-dotagent dream review-stale           # rules overdue, due-soon, or with churned files
-dotagent dream rerationale <id> --rationale "..."   # extend review_after; rationale REQUIRED
-dotagent dream expire-stale           # move past-grace rules to dream/expired/
+# Git layout (project-root only)
+dotagent git init / status / push / pull
+dotagent git clone-services
+dotagent git scaffold-protection             # GitHub Actions workflow
 
-# bridging tools without native hooks
-dotagent watch cursor                 # foreground watcher (Cursor < 0.40)
-dotagent serve --host 0.0.0.0 --port 9700   # team event server
-
-# project management (Phase 8)
-dotagent project init                          # interactive scope-builder Q&A
-dotagent project add-module "<name>"           # per-module Q&A with vagueness probes
-dotagent project status                        # source-of-truth completion %
-dotagent project start <id>                    # open a dev cycle
-dotagent project handoff <id>                  # writes the QA handoff doc
-dotagent project qa-record <id> --result pass|fail --rationale "..."  # rationale REQUIRED
-dotagent project resolve <id>                  # ship after qa_passed
-dotagent project next                          # dep-aware "what's next"
+# Tools
+dotagent tool debug "$(cat trace.txt)"       # stack trace → past failures
+dotagent tool checklist --since 14d          # pre-deploy gate
+dotagent tool memory "BUG-001"               # search the four memories
 ```
 
 ---
 
-## Project management — track modules end-to-end
+## Project management — dev↔QA cycle
 
-Big projects break down into modules. dotagent's `project` layer builds an
-extensive per-module plan via interactive Q&A, then tracks each module
-through a dev ↔ QA cycle until ship.
-
-The trick: **documents wire the handoff in both directions.**
+Modules are tracked end-to-end via interactive Q&A then a strict dev↔QA cycle. Documents wire the handoff in both directions:
 
 ```
-1. dotagent project add-module "Auth"          → interactive Q&A builds PLAN.md
-2. dotagent project start 01-auth              → cycle 1 opens
-3. ... dev work ...
-4. dotagent project handoff 01-auth            → writes cycles/01/dev-handoff.md
-                                                 (QA tool reads this)
-5. dotagent project qa-record 01-auth          → if FAIL: writes qa-findings.md
-        --result fail --rationale "..."          (dev tool reads this next round)
-6. dotagent project start 01-auth              → cycle 2 opens automatically
-7. ... dev fixes ...
-8. dotagent project handoff 01-auth            → cycles/02/dev-handoff.md
-9. dotagent project qa-record --result pass --rationale "..."
-10. dotagent project resolve 01-auth           → SHIPPED; completion.md written
+project add-module "Auth"          → interactive Q&A → PLAN.md
+project start 01-auth              → cycle 1 opens
+... dev work ...
+project handoff 01-auth            → writes cycles/01/dev-handoff.md  (QA reads this)
+project qa-record 01-auth          → if FAIL: writes qa-findings.md   (dev reads next round)
+        --result fail --rationale "..."
+project start 01-auth              → cycle 2 opens automatically
+... fixes ...
+project handoff 01-auth            → cycles/02/dev-handoff.md
+project qa-record --result pass --rationale "..."
+project resolve 01-auth            → SHIPPED; completion.md written; HISTORY.md updated
 ```
 
-Whichever tool you open (Claude Code, Codex, Cursor, ...) the rendered
-`CLAUDE.md` automatically points at the right document for the current
-state — `PLAN.md` while developing, `qa-findings.md` after a fail,
-`dev-handoff.md` when the QA tool is up. **No context loss between rounds.**
-
-Rationale on `qa-record` is mandatory (the audit of what passed and why).
-The scope-builder also detects vague answers and probes for specifics
-(hedge words like *maybe*, vague quantifiers like *fast* without numbers).
-
-`dotagent project status` aggregates module states across the project:
-
-```
-$ dotagent project status
-project:  TestPortal
-modules:  2/3 shipped  (67% complete)
-  shipped:        01-config, 02-auth
-  in_progress:    03-payments
-  planned:        04-notifications
-```
-
-That's the source of truth. See the wiki page
-[**Project Management**](https://github.com/dilawarabbas1/dotagent/wiki/Project-Management)
-for the full workflow.
+Rationale on `qa-record` is **mandatory**. The contract negotiation runs rounds between dev and QA with a built-in S1–S11 scoring rubric (max 33; ready ≥30 · polish ≥24 · rework ≥18 · not_ready ≤17). Frozen contracts are immutable.
 
 ---
 
-## Layered project architecture (v0.4+)
+## Layered project architecture
 
-For multi-service projects (frontend + backend + admin), dotagent introduces
-a **project-root layer** that holds cross-cutting business intent + hard rules
-+ shared docs, with each service repo inheriting via a `parent:` field in its
-`.agent/config.yaml`.
+Multi-service projects have a **project-root layer** holding cross-cutting business intent + hard rules + shared docs, with each service repo inheriting via `parent:` in its `.agent/config.yaml`:
 
 ```
-Project Root/                              ← own git repo (e.g. aigent-meta)
+Project Root/                              (own git repo, e.g. aigent-meta)
 ├── .agent/
 │   ├── project_brief.md                   ← business OBJs + FEATs + RULEs
 │   ├── git.yaml                           ← repo manifest + branch rules
-│   └── project/
-│       ├── plan.yaml                      ← FEAT → Module mapping
-│       └── CONTRACTS.md                   ← Tier-2 contracts dashboard
+│   └── project/plan.yaml                  ← FEAT → Module mapping
 ├── docs/                                  ← cross-cutting source docs
-├── contracts.md                           ← Tier-1 cross-repo rollup
+├── contracts.md                           ← Tier-1 cross-repo rollup (generated)
 │
-├── backend/                               ← service repo (own git remote)
+├── backend/                               ← service repo
 │   └── .agent/config.yaml                 ←   parent: ../..
-├── customer-portal/                       ← (same)
-└── admin-portal/                          ← (same)
+├── customer-portal/
+└── admin-portal/
 ```
 
-### Commands you'll use most
+Each service repo's `CLAUDE.md` carries `../`-prefixed `INHERITED` pointers at the parent's `project_brief`, `rules`, `git.md`, `architecture`, `style`, `patterns`, `plan.yaml`, etc. — surfaced in the same navigation manifest as the service-local context.
 
-```bash
-# Schema management
-dotagent structure show                    # canonical layout for this tier
-dotagent structure check                   # audit current repo vs schema
-dotagent migrate [--plan] [--rollback]     # upgrade .agent/ schema; reversible
+`dotagent git.yaml` is project-root-scope only; service-repos read the rendered `git.md` dashboard, never the YAML.
 
-# Project brief — durable business intent
-dotagent project brief init                # interactive Q&A → project_brief.md
-dotagent project brief check               # OBJ → FEAT → Module → Contract audit
+---
 
-# Contract dashboards
-dotagent project contracts show            # this repo's CONTRACTS.md
-dotagent project contracts rollup          # cross-repo rollup at Project Root
-dotagent project contracts rebuild         # regenerate (also called automatically)
+## Traceability chain
 
-# Plan negotiation (pure data layer — orchestrators drive)
-dotagent project plan write-draft  --actor planner --from-stdin
-dotagent project plan write-review --actor qa --rationale "..." --from-stdin
-dotagent project plan converged            # exit 0 / 1
-dotagent project plan freeze               # → plan.yaml + plan.frozen.yaml
-
-# Document lifecycle
-dotagent archive scan                      # what's eligible to archive
-dotagent archive run                       # move fixed bugs + rescinded patterns + shipped modules
-dotagent archive restore <id>              # un-archive
-
-# Git layout (Project Root only)
-dotagent git init --remote git@…           # scaffold .agent/git.yaml
-dotagent git rebuild                       # regenerate .agent/git.md
-dotagent git status / push / pull          # meta sync
-dotagent git clone-services                # clone every repos[] entry
-dotagent git init-hooks                    # pre-push hook against branch rules
-dotagent git scaffold-protection           # GitHub Actions workflow
-dotagent git verify --branch <name>        # check pending changes vs rules
-```
-
-### Traceability chain
-
-Every contract cites the brief IDs it serves; `dotagent project brief check`
-audits the full chain:
+Every contract cites the brief IDs it serves. `dotagent project brief check` audits the full chain:
 
 ```
-OBJ-01 ──► FEAT-02 ──► M02-password-reset ──► cycles/01/contract.md
+OBJ-01 ──► FEAT-02 ──► M02-password-reset ──► cycles/01/contract.frozen.md
                                               <!-- anchor: business-traceability -->
                                               **Feature(s):** FEAT-02
                                               **Objective(s):** OBJ-01, OBJ-02
 ```
 
-The contract-scoring rubric includes **S11 — Business traceability** (0-3),
-making the total max **33**. Bands: ready ≥30 · polish ≥24 · rework ≥18 ·
-not_ready ≤17.
-
----
-
-## How dotagent compares
-
-|                                   | Claude `CLAUDE.md` | Cursor Rules | Copilot custom instr. | dotagent |
-|-----------------------------------|--------------------|--------------|------------------------|----------|
-| One file per tool                 | yes                | yes          | yes                    | **one source, every tool** |
-| Reads your `docs/`                | no                 | no           | no                     | **yes (configurable)** |
-| Embeds bug registry / anti-patterns | manual           | manual       | manual                 | **automatic, severity-ranked** |
-| Per-developer personalization     | no                 | no           | no                     | **per-actor profile** |
-| Attribution surviving in git log  | no                 | no           | no                     | **`Co-authored-by` trailer** |
-| Stack-trace → past failures lookup | no                | no           | no                     | **`dotagent tool debug`** |
-| Auto-learn from team experience   | no                 | no           | no                     | **Auto-Dream with mandatory rationale** |
-| Track modules through dev ↔ QA cycle | no              | no           | no                     | **`dotagent project` with mandatory QA rationale** |
-| Warn before a change conflicts with a rule | no         | no           | no                     | **conflict detection on active edits** |
-| Rule expiration + re-rationale     | no                 | no           | no                     | **`dream review-stale` / `rerationale` / `expire-stale`** |
-
----
-
-## Migrating an existing Claude-Code-Optimization repo
-
-If your project already has `docs/bug-registry.md`, `docs/anti-patterns.md`,
-`prompts/*.md`, and `.claude/hooks/*.sh`:
-
-```bash
-cd ~/code/your-cco-project
-pipx install "git+https://github.com/dilawarabbas1/dotagent"
-dotagent init --no-llm
-dotagent migrate-cco       # wires docs/ as sources, imports prompts/ → .agent/skills/
-dotagent sync
-```
-
-Nothing under `docs/` is copied. `prompts/*.md` become
-`.agent/skills/imported-<slug>.md`. Your existing `CLAUDE.md` content gets
-parsed and routed into `.agent/{style,rules,architecture,patterns,preferences}.md`
-so hand-written copy survives.
+The contract-scoring rubric includes **S11 — Business traceability** (0-3), making the total max **33**.
 
 ---
 
@@ -362,8 +256,7 @@ pip install 'dotagent[watch]'      # watchdog → `dotagent watch cursor`
 pip install 'dotagent[all]'        # everything above
 ```
 
-The base install stays small (~5 MB; click + PyYAML + Jinja2 + anthropic).
-Extras only pull in their deps when needed.
+Base install stays small (~5 MB).
 
 ---
 
@@ -371,7 +264,7 @@ Extras only pull in their deps when needed.
 
 ```
 docs/*.md  ─────────────────────┐
-(your hand-written truth)       │
+(hand-maintained truth)         │
                                 ▼
             ┌─────────────────────────────────┐
             │   Source Indexer (sources.py)   │
@@ -380,29 +273,62 @@ docs/*.md  ─────────────────────┐
                           ▼
 .agent/*.md ──┐  ┌───────────────────┐  ┌── memory/working   (now)
               ├─▶│  Context Resolver │◀─┼── memory/episodic  (before)
-config.yaml ──┘  │   (context.py)    │  ├── memory/semantic  (patterns + indexed sources)
+config.yaml ──┘  │   (context.py)    │  ├── memory/semantic  (patterns)
                  └─────────┬─────────┘  └── memory/personal  (per-actor)
-                           │ merged Context object
+                           │
                            ▼
-                ┌──────────────────────┐
-                │  Adapters (render)   │
-                │  CLAUDE.md, .cursor- │
-                │  rules, copilot, ... │
-                └──────────┬───────────┘
-                           ▼
-       AI agent reads CLAUDE.md and gets the full context.
+            ┌─────────────────────────────────┐
+            │  Manifest Renderer (v3)         │
+            │  schema-driven, tier-aware      │
+            └─────────────┬───────────────────┘
+                          │ identical body, multiple targets
+                          ▼
+      CLAUDE.md  ·  .cursorrules  ·  copilot-instructions.md  ·  AGENTS.md
+                          │
+                          ▼
+            ┌─────────────────────────────────┐
+            │  Derived files (render/derived) │
+            │  service-registry, HISTORY,     │
+            │  dashboard, SCOPE, CONTRACTS    │
+            └─────────────────────────────────┘
 ```
+
+---
+
+## How dotagent compares
+
+|  | CLAUDE.md alone | Cursor Rules | Copilot custom instr. | dotagent |
+|---|---|---|---|---|
+| One file per tool | yes | yes | yes | **one source, every tool, identical body** |
+| Schema-driven manifest | no | no | no | **yes — coverage-gated by CI** |
+| Tier-aware (project-root / service / standalone) | no | no | no | **yes; service-repo inherits** |
+| Embeds top-N from bug-registry / anti-patterns | manual | manual | manual | **automatic (v1) or pointers only (v3 default)** |
+| Per-developer personalization | no | no | no | **per-actor profile; never leaks** |
+| Attribution surviving in git log | no | no | no | **`Co-authored-by` trailer** |
+| Stack-trace → past failures | no | no | no | **`dotagent tool debug`** |
+| Auto-learn from team (mandatory rationale) | no | no | no | **Auto-Dream** |
+| Track modules through dev↔QA cycle | no | no | no | **`dotagent project` with mandatory QA rationale + S1–S11 scoring** |
+| Conflict detection on active edits | no | no | no | **yes** |
+| Rule expiration + re-rationale | no | no | no | **`dream review-stale` / `rerationale` / `expire-stale`** |
+| Required-doc coverage for changed files | no | no | no | **`dotagent doc-coverage`** |
 
 ---
 
 ## Documentation
 
-- [`USING_WITH_CLAUDE_CODE.md`](USING_WITH_CLAUDE_CODE.md) — practical guide
-- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — architecture decisions + roadmap state
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed when
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
-- [`examples/`](examples/) — sample `docs/*.md` showing the expected format
-- **[Wiki](https://github.com/dilawarabbas1/dotagent/wiki)** — Getting Started, Architecture, Memory Model, Sources & Docs, Auto-Dream, Project Management, Server & RBAC, Multi-Project & Multi-Developer, Migrating from CCO, Troubleshooting, FAQ
+| Doc | What |
+|---|---|
+| [`USING_WITH_CLAUDE_CODE.md`](USING_WITH_CLAUDE_CODE.md) | Practical session guide |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to contribute |
+| [`docs/CLAUDE_MD_DESIGN.md`](docs/CLAUDE_MD_DESIGN.md) | Four-layer manifest design |
+| [`docs/SERVICE_REPO_CLAUDE_MD.md`](docs/SERVICE_REPO_CLAUDE_MD.md) | Service-repo tier (child of project-root) |
+| [`docs/DERIVED_FILES_DESIGN.md`](docs/DERIVED_FILES_DESIGN.md) | What dotagent generates |
+| [`docs/HAND_MAINTAINED_DOCS_CONVENTION.md`](docs/HAND_MAINTAINED_DOCS_CONVENTION.md) | What dotagent indexes but never writes |
+| [`docs/DOC_COVERAGE_CLI.md`](docs/DOC_COVERAGE_CLI.md) | `dotagent doc-coverage` reference |
+| [`CODA_PROMPT.md`](CODA_PROMPT.md) | Coda orchestrator integration spec |
+| [`examples/`](examples/) | Sample `docs/*.md` formats |
+| **[Wiki](https://github.com/dilawarabbas1/dotagent/wiki)** | Getting Started · Architecture · Memory Model · Auto-Dream · Project Management · Multi-Project · Troubleshooting · FAQ |
 
 ---
 
@@ -410,24 +336,22 @@ config.yaml ──┘  │   (context.py)    │  ├── memory/semantic  (pa
 
 ```bash
 dotagent doctor                  # first line of defense — covers 90% of issues
-DOTAGENT_DEBUG=1 dotagent sync   # surface silenced exceptions to stderr
+DOTAGENT_DEBUG=1 dotagent sync   # surface silenced exceptions
 ```
 
-Common failure modes and fixes are in
-[`USING_WITH_CLAUDE_CODE.md#quick-troubleshooting`](USING_WITH_CLAUDE_CODE.md#quick-troubleshooting).
+| Symptom | Fix |
+|---|---|
+| `CLAUDE.md` still v1 (compendium) after v0.5 upgrade | Check `.agent/config.yaml` — remove `render: { use_manifest: false }` or set to `true` |
+| Pre-commit hook overwrites my docs | It doesn't — only re-renders generated adapters. Generated files aren't auto-staged. Disable via `hooks.auto_regen_on_docs: false` |
+| Tests reference `KIND_GENERATED` on a hand-maintained doc | Boundary violation — file an issue. Test `test_regenerate_derived_files_never_writes_hand_maintained` should catch this. |
 
 ---
 
 ## Status
 
-**v0.4.0+** — launch-ready with the full **layered project architecture**:
-canonical structure schema, in-place schema migration, document lifecycle,
-tiered bug registry, durable business-intent capture (`project_brief.md`),
-end-to-end traceability (OBJ → FEAT → Module → Contract), per-repo
-contracts dashboards, plan-negotiation primitives, cross-repo rollups, and
-git-layout enforcement. **438 tests passing.**
+**v0.5.0** — schema-driven navigation manifest is the default renderer. Layered project architecture, durable business-intent capture, end-to-end traceability, per-repo contracts dashboards, plan-negotiation primitives, cross-repo rollups, git-layout enforcement, derived-files orchestrator (service-registry · HISTORY · dashboard), hand-maintained docs convention, doc-coverage CLI.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
+**733 tests passing.** See [`CHANGELOG.md`](CHANGELOG.md) for what changed when.
 
 ---
 

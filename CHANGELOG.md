@@ -4,6 +4,205 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-05-20
+
+### Changed
+- Doc-only release. README.md fully rewritten for v0.5.0 (manifest as
+  default, hand-maintained convention surfaced, doc-coverage CLI,
+  derived-files orchestrator). USING_WITH_CLAUDE_CODE.md trimmed to a
+  focused practical guide. CODA_PROMPT.md gains a Section 8.5 covering
+  every v0.5 change (manifest default flip, hand-maintained docs,
+  doc-coverage, derived files, service-repo inheritance, auto-regen,
+  manifest preview CLI). CHANGELOG backfilled with entries for 0.4.7
+  through 0.5.0.
+
+### Removed
+- `CLAUDE_MD_V2_PLAN.md`, `IMPLEMENTATION_PLAN.md`, `CODE_AUDIT_PLAN.md`,
+  `PROJECT_CONTEXT.md` — all four were pre-implementation planning
+  documents for features that have shipped. Removed to reduce drift
+  surface. Plans live in git history if ever needed.
+
+### Internal
+- Two stale code-comment references to the removed planning docs
+  updated to point at `docs/CLAUDE_MD_DESIGN.md` and inline language
+  respectively.
+
+## [0.5.0] — 2026-05-20
+
+**The v3 navigation manifest is now the default render path.** Every feature
+shipped in 0.4.7 → 0.4.13 was built on top of the manifest model; flipping
+the default makes that contract official.
+
+### Changed
+- `DEFAULT_CONFIG["render"]["use_manifest"]`: `false` → `true`. New projects
+  and existing projects without an explicit override pick up v3 on next
+  `dotagent sync`. Opt-out: `render: { use_manifest: false }` in
+  `.agent/config.yaml`. v1 renderer stays in the codebase as the safety
+  net; malformed config falls back to v1.
+
+### Tests
+- `test_default_config_emits_v3_manifest` (new) — asserts the new default
+  behaviour.
+- `test_claude_adapter_uses_v1_when_flag_off` renamed to
+  `..._when_flag_explicitly_off` to reflect the inverted default.
+- `test_claude_adapter_renders_full_context_with_bug_registry` now
+  explicitly sets v1 opt-out — it's testing v1's inline-content behaviour.
+
+Full suite: **733 passed, 2 skipped.**
+
+## [0.4.13] — 2026-05-20
+
+### Changed
+- Doc-only release. Trimmed `docs/` design references from 1718 lines →
+  556 lines (68% reduction). Removed historical narrative (compendium →
+  manifest rationale), token-economics prose, shipped roadmap items,
+  glossaries that duplicated section content, and the
+  `linkedin-followup-post.md` marketing file. Kept four-layer model,
+  ownership rule, schema + coverage gates, tier model, how-to-extend,
+  verbatim source spec (in `HAND_MAINTAINED_DOCS_CONVENTION.md`), and
+  cross-doc navigation footers.
+
+## [0.4.12] — 2026-05-20
+
+### Added
+- **`dotagent doc-coverage`** — read-only CLI returning the
+  hand-maintained docs an agent should consider updating for a given
+  changed-file set. Reads the `feature_master` structure; writes
+  nothing. Designed for orchestrator gating (Coda doc-maintenance
+  stage) and standalone git-hook / PR-review use.
+- Severity model: 🔴 HARD (file is in an FM-###'s `## files` section) ·
+  🟡 SUGGESTED (regex heuristics: db / redis / route / host paths) ·
+  🟢 CHECK (always: anti-patterns + bug-registry on bug-fix commits).
+- Flags: `--files` · `--format json|markdown|text` · `--commit-msg`
+  (for `DA-BUG-LAYER-NNN` routing) · `--severity` filter · `--repo`.
+- Tolerant Markdown parser (`src/dotagent/coverage.py::parse_fm_index`)
+  supporting case variants on the `## files` heading, glob entries
+  (`*` and `**`), and multi-FM claims of the same file.
+- Hard non-write boundary enforced by
+  `test_doc_coverage_never_writes_anything` — FS snapshot before/after.
+- Reference: `docs/DOC_COVERAGE_CLI.md`.
+
+### Tests
++29 in `tests/test_doc_coverage.py`.
+
+## [0.4.11] — 2026-05-20
+
+### Added
+- **Hand-maintained docs convention registered as referenced sources.**
+  dotagent now KNOWS about feature docs / deep dependency registries /
+  ops references and surfaces them in CLAUDE.md without ever generating
+  or overwriting them. Spec saved verbatim in
+  `docs/HAND_MAINTAINED_DOCS_CONVENTION.md`.
+- Two new categories: `CAT_FEATURE_DOCS` (📑) and `CAT_OPS` (🔧). Schema
+  entries (`kind=KIND_FILE`, `required=False`, `HAND-MAINTAINED ·`
+  prefix in `when_to_read`) added across project-root + single-repo
+  tiers for: `feature_master.md` + templated
+  `feature_master/FM-<id>-<slug>.md` · `db-impact-map-{master,tenant,vector}.md` ·
+  `redis-key-registry-{tenant,global,events}.md` ·
+  `bug-registry-{infrastructure,agents,orchestrator}.md` ·
+  `ARCHITECTURE.md` · `ops/{service-registry,server-dependencies,tuning,tls-and-env}.md`.
+- Manifest renderer's `_CATEGORY_PREFACE` dict — adds prefatory text
+  for specific categories. `CAT_FEATURE_DOCS` carries the explicit
+  "Entry point for any feature work: read `docs/feature_master.md`
+  first, then the matching `docs/feature_master/FM-###-<slug>.md`..."
+  guidance.
+- `DEFAULT_CONFIG.sources.extra` registers all 15 hand-maintained paths
+  with appropriate `kind` (bug_registry / db_impact_map / redis_keys /
+  architecture / generic) so the indexer picks them up if they exist.
+
+### Hard boundary
+- All new paths declared `KIND_FILE`, never `KIND_GENERATED`.
+- Test `test_regenerate_derived_files_never_writes_hand_maintained`
+  writes sentinel content to every path, runs the full derived-files
+  orchestrator, then asserts byte-for-byte unchanged. If you find a
+  write path to one of these files, **that's a bug**.
+
+### Tests
++67 in `tests/render/test_hand_maintained_docs.py`.
+
+## [0.4.10] — 2026-05-20
+
+### Added
+- **Three new generators** in a unified orchestrator
+  (`src/dotagent/render/derived.py::regenerate_derived_files()`):
+  - **`docs/service-registry.md`** (project-root only) — per-repo
+    table (id · path · default_branch · role · remote) generated from
+    `.agent/git.yaml` `repos:` block. Replaces hand-written registries
+    that drifted out of sync.
+  - **`.agent/project/modules/<id>/HISTORY.md`** (per module) —
+    cycle log, newest-first, with status badges: ✓ Passed QA · ✗
+    Failed QA · ⏳ Contract frozen · ⏳ Dev handoff · 📝 Contract
+    negotiation (round N/M) · 🟢 In progress.
+  - **`.agent/dashboard.md`** (project tier) — single-page health
+    snapshot with five sections: 📜 Open contracts · 🧪 Pending QA ·
+    ⏰ Stalled (>14d) · 📅 Doc staleness (>60d) · 📡 Recent activity.
+- Orchestrator called from `dotagent sync`, `dotagent project
+  regenerate`, and the docs-change pre-commit hook. Fail-soft per
+  generator (one failure never blocks the others). Safe to call from
+  any state — silently no-ops when inputs are absent.
+- Reference: `docs/DERIVED_FILES_DESIGN.md`.
+
+### Tests
++32 across `tests/render/test_{service_registry,module_history,dashboard,derived_regen}.py`.
+
+## [0.4.9] — 2026-05-20
+
+### Changed
+- **`../.agent/git.yaml` removed from service-repo schema.** `git.yaml`
+  is project-root scope — it's the source of truth for the meta repo's
+  branch rules, and service-repo devs never edit YAML. They read the
+  rendered dashboard `../.agent/git.md` instead, which stays in
+  MUST_READ. Regression test
+  `test_git_yaml_is_project_root_only_not_service_repo` asserts the YAML
+  stays out of the schema AND the rendered manifest.
+
+### Added
+- **Auto-regeneration of adapters on docs change.** When the pre-commit
+  hook fires `dotagent observe pre-commit --files` and any staged file
+  matches `docs/*.md`, every enabled adapter (CLAUDE.md, .cursorrules,
+  copilot-instructions.md, AGENTS.md) is re-rendered alongside the
+  source reindex. Regenerated files are NOT auto-staged. Opt-out:
+  `hooks.auto_regen_on_docs: false` in `.agent/config.yaml`. Failures
+  logged, never block the commit.
+
+### Tests
++4 in `tests/test_observe_autoregen.py` + 1 new in
+`test_service_repo_child.py`.
+
+## [0.4.8] — 2026-05-20
+
+### Added
+- **Service-repo CLAUDE.md as child of project-root.**
+  `_SERVICE_REPO_ENTRIES` gains 18 `../`-prefixed entries tagged
+  `INHERITED ·` in their `when_to_read` text. Categories: MUST_READ
+  (brief, rules, git.md), ARCHITECTURE (architecture, service-registry,
+  shared-contracts, dependency-map), STYLE (style, patterns), CONFIG,
+  PROJECT_PLAN (plan.yaml, SCOPE, CONTRACTS), PRIORITIES (contracts
+  rollup), CONTRACTS (modules), BUGS, ANTI_PATTERNS.
+- **Contract layer surfaced in service-repo schema.**
+  `.agent/project/modules` + 7 cycle-artifact path patterns added under
+  `CAT_CONTRACTS`. Inherited counterpart `../.agent/project/modules`
+  added too — declares cross-service modules at the project-root tier.
+- **`dotagent manifest` CLI** — explicit entrypoint for the v3
+  renderer. Modes: stdout (default), `--write FILE`, `--diff FILE`
+  (timestamp-normalized). Auto-detects tier or accepts `--tier`.
+- **Dynamic `docs/` listing** in the rendered manifest
+  (`_render_other_docs`) — auto-lists any `.md` files in `docs/` not
+  covered by the canonical schema, with the file's first H1 as the
+  description. Skips `docs/archive/`. Suppressed when empty.
+- Reference: `docs/SERVICE_REPO_CLAUDE_MD.md`.
+
+### Tests
++81 across `tests/render/test_{dynamic_docs,service_repo_child}.py` +
+`tests/test_manifest_cmd.py`.
+
+## [0.4.7] — 2026-05-20
+
+### Added
+- `.agent/project_brief.md` as optional `CAT_MUST_READ` entry in
+  single-repo tier. End-to-end test revealed the gap — only `rules.md`
+  appeared in MUST READ for single-repo until this PR.
+
 ## [0.4.6] — 2026-05-20
 
 ### Fixed
