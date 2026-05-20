@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import click
 
+from .commands.archive_cmd import archive
 from .commands.context_cmd import context
 from .commands.doctor_cmd import doctor
 from .commands.dream_cmd import dream_group
@@ -47,6 +48,7 @@ identity.add_command(identity_show)
 identity.add_command(identity_set)
 
 # core
+main.add_command(archive)
 main.add_command(init)
 main.add_command(sync)
 main.add_command(status)

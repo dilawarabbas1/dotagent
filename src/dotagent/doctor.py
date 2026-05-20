@@ -221,6 +221,29 @@ def _check_canonical_structure(paths: Paths) -> Diagnosis:
     )
 
 
+def _check_archive_pending(paths: Paths) -> Diagnosis:
+    """Report info-level count of entries eligible for archival."""
+    try:
+        from .archive import scan as _archive_scan
+        report = _archive_scan(paths.repo)
+    except Exception as exc:  # noqa: BLE001
+        return Diagnosis(
+            name="archive",
+            status=_INFO,
+            message=f"archive scan failed: {exc}",
+        )
+    total = len(report.candidates)
+    if total == 0:
+        return Diagnosis(name="archive", status=_OK, message="no archive-eligible entries")
+    breakdown = ", ".join(f"{k}={v}" for k, v in report.counts.items() if v > 0)
+    return Diagnosis(
+        name="archive",
+        status=_INFO,
+        message=f"{total} entry/entries eligible for archive ({breakdown})",
+        fix="run `dotagent archive scan` for detail, then `dotagent archive run`",
+    )
+
+
 def run_checks() -> list[Diagnosis]:
     """Run every check. Return a flat list of diagnoses."""
     from .paths import find_repo_root
@@ -240,6 +263,7 @@ def run_checks() -> list[Diagnosis]:
 
     cfg = Config.load(paths)
     out.append(_check_canonical_structure(paths))
+    out.append(_check_archive_pending(paths))
     out.append(_check_sources(paths, cfg))
     out.append(_check_hooks(paths))
     out.append(_check_episodic_index(paths))
