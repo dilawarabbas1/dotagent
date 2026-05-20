@@ -21,7 +21,14 @@ from .model import Project, load_project
 
 @dataclass
 class RepoSummary:
-    """One row in the cross-repo rollup."""
+    """One row in the cross-repo rollup.
+
+    `note` carries a human-readable message that may be informational
+    ("no cycles tracked at this tier") or a real error ("path missing").
+    `is_error` distinguishes them so renderers can style accordingly.
+    `error` is kept as an alias of `note` when `is_error` is True, for
+    backward compatibility with callers that read `error` directly.
+    """
     id: str
     path: str
     role: str
@@ -30,7 +37,13 @@ class RepoSummary:
     last_touched: str
     last_actor: str
     contracts_index_path: str
-    error: str = ""
+    note: str = ""
+    is_error: bool = False
+
+    @property
+    def error(self) -> str:
+        """Backward-compat alias: only the actual-error subset of note."""
+        return self.note if self.is_error else ""
 
     def to_dict(self) -> dict:
         return {
@@ -38,7 +51,9 @@ class RepoSummary:
             "open": self.open, "frozen": self.frozen,
             "last_touched": self.last_touched, "last_actor": self.last_actor,
             "contracts_index_path": self.contracts_index_path,
-            "error": self.error,
+            "note": self.note,
+            "is_error": self.is_error,
+            "error": self.error,   # backward compat: only set when is_error
         }
 
 
@@ -91,11 +106,13 @@ def build_rollup(paths: Paths) -> Rollup:
             continue
         target = (paths.repo / repo_path).resolve()
         if not target.is_dir():
+            # Real error — manifest points at a non-existent directory.
             rollup.repos.append(RepoSummary(
                 id=repo_id, path=repo_path, role=role,
                 open=0, frozen=0, last_touched="", last_actor="",
                 contracts_index_path="",
-                error=f"path missing: {repo_path}",
+                note=f"path missing: {repo_path}",
+                is_error=True,
             ))
             continue
         rollup.repos.append(_summarize_repo(target, repo_id, repo_path, role))
@@ -127,10 +144,18 @@ def render_markdown(rollup: Rollup) -> str:
     )
     lines.append("|---|---|---|---|---|---|---|")
     for r in rollup.repos:
-        if r.error:
+        if r.is_error:
             lines.append(
                 f"| **{r.id}** | {r.role or '—'} | — | — | — | — | "
-                f"_error: {r.error}_ |"
+                f"_⚠ error: {r.note}_ |"
+            )
+            continue
+        if r.note and not (r.open or r.frozen):
+            # Informational note (e.g. service repo without local cycles) —
+            # not a failure. Render zero counts + the note as a footnote.
+            lines.append(
+                f"| **{r.id}** | {r.role or '—'} | 0 | 0 | — | — | "
+                f"_{r.note}_ |"
             )
             continue
         link = (f"[CONTRACTS.md]({r.contracts_index_path})"
@@ -161,18 +186,30 @@ def _summarize_repo(target_dir: Path, repo_id: str,
     try:
         project = load_project(target_paths)
     except Exception as exc:
+        # Genuine load failure — surfacing as an error helps the user
+        # diagnose corrupted plan.yaml.
         return RepoSummary(
             id=repo_id, path=repo_path, role=role,
             open=0, frozen=0, last_touched="", last_actor="",
             contracts_index_path="",
-            error=f"could not load project: {exc}",
+            note=f"could not load project: {exc}",
+            is_error=True,
         )
     if project is None:
+        # Service repo doesn't run its own per-repo cycle. Valid for the
+        # "single-project-with-service-repos-as-checkouts" topology (Aigent's
+        # default). Informational, NOT an error.
+        agent_present = (target_dir / ".agent").is_dir()
+        if agent_present:
+            note = "no cycles tracked here — meta tier owns project state"
+        else:
+            note = "no dotagent install in this service repo"
         return RepoSummary(
             id=repo_id, path=repo_path, role=role,
             open=0, frozen=0, last_touched="", last_actor="",
             contracts_index_path="",
-            error="no plan.yaml in repo",
+            note=note,
+            is_error=False,
         )
 
     index = build_index(project)
