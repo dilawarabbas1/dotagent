@@ -4,6 +4,7 @@ import click
 
 from .commands.archive_cmd import archive
 from .commands.context_cmd import context
+from .commands.doc_coverage_cmd import doc_coverage_cmd
 from .commands.doctor_cmd import doctor
 from .commands.dream_cmd import dream_group
 from .commands.git_cmd import git_group
@@ -58,6 +59,7 @@ main.add_command(observe)
 main.add_command(reindex)
 main.add_command(context)
 main.add_command(manifest)
+main.add_command(doc_coverage_cmd)
 main.add_command(trailer)
 main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
