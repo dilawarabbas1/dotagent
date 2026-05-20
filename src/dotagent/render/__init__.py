@@ -6,7 +6,7 @@ files as needed.
 
 Public entry point: `render_manifest(paths, tier=None)` → markdown text.
 
-Design ref: see CLAUDE_MD_V2_PLAN.md (renamed v3 internally).
+Design ref: docs/CLAUDE_MD_DESIGN.md.
 """
 
 from __future__ import annotations

@@ -512,6 +512,160 @@ what's new (everything is additive — old commands still work):
 
 ---
 
+## Section 8.5 — What changed in v0.5 (vs v0.4)
+
+The v3 navigation manifest is the default. Hand-maintained documentation
+gets first-class navigation. New CLI for doc-coverage gating.
+
+### Render default flipped (0.5.0)
+
+`render.use_manifest` default flipped from `false` → `true`. New
+projects and existing projects without an explicit override emit the v3
+navigation manifest on next `dotagent sync`. To stay on v1 (compendium):
+`render: { use_manifest: false }` in `.agent/config.yaml`. v1 stays in
+the codebase as the safety net; malformed config falls back to v1.
+
+### Adapter body is identical across tools
+
+When `use_manifest: true`, `CLAUDE.md` / `.cursorrules` /
+`copilot-instructions.md` / `AGENTS.md` carry **the same body** (modulo
+`rendered-at:` timestamp). You only need to read one of them; pick
+whichever the user opens.
+
+### Four layers in every manifest
+
+```
+Layer 1 — How to read this file       (invariant reading protocol)
+Layer 2 — Workflow contract           (invariant; OWNERSHIP RULE)
+Layer 3 — Hard policy                 (invariant never-violate list)
+Layer 4 — Navigation manifest         (schema-driven per tier)
+```
+
+Layers 1–3 are byte-identical across every dotagent project (with
+placeholders like `{meta_branch}` substituted). Layer 4 is the
+schema-driven section.
+
+### Hand-maintained docs convention (0.4.11)
+
+Optional richer doc structure that dotagent **knows about but never
+writes to**. Surfaced as navigation pointers (HAND-MAINTAINED · prefix
+in `when_to_read`).
+
+```
+docs/
+├── feature_master.md                            (entry-point feature index)
+├── feature_master/FM-###-<slug>.md              (per-feature record)
+├── db-impact-map-{master,tenant,vector}.md
+├── redis-key-registry-{tenant,global,events}.md
+├── bug-registry-{infrastructure,agents,orchestrator}.md
+├── ARCHITECTURE.md
+└── ops/{service-registry,server-dependencies,tuning,tls-and-env}.md
+```
+
+Coda usage: when working on a feature, point the agent at
+`docs/feature_master.md` first → matching `FM-###-<slug>.md` → follow
+file-path references into the deep registries. Single-file conventions
+(`docs/bug-registry.md`, etc.) still work — sharded variants are
+additive.
+
+### `dotagent doc-coverage` (0.4.12)
+
+Read-only CLI returning the required-doc checklist for a changed-file
+set. Intended for orchestration doc-maintenance gating.
+
+```bash
+dotagent doc-coverage \
+    --files "$(git diff --cached --name-only | tr '\n' ',')" \
+    --commit-msg "$(git log -1 --pretty=%s)" \
+    --format json
+```
+
+Output (severity-tagged):
+
+```json
+{
+  "files": [
+    {
+      "path": "src/auth.py",
+      "fm_ids": ["FM-014"],
+      "required_docs": [
+        {"path": "docs/feature_master/FM-014-auth.md", "severity": "hard", "reason": "..."},
+        {"path": "docs/anti-patterns.md", "severity": "check", "reason": "Always: review..."}
+      ]
+    }
+  ],
+  "unmapped_files": [],
+  "warnings": []
+}
+```
+
+- **HARD** — file is in an FM-###'s `## files` section. Update that
+  feature's record.
+- **SUGGESTED** — heuristic match (DB / Redis / route / host path).
+- **CHECK** — always-applicable (anti-patterns + bug-registry on
+  `DA-BUG-LAYER-NNN` commit messages).
+
+`unmapped_files` lists files no FM-### claims. Treat non-empty as a
+coverage gap — the agent either adds the file to an existing FM's
+`files:` section or declares a new FM-###.
+
+The CLI **never writes**. Verified by
+`test_doc_coverage_never_writes_anything` (FS-snapshot pre/post).
+
+### Derived-files orchestrator (0.4.10)
+
+`dotagent sync` now also re-renders:
+
+| File | Source |
+|---|---|
+| `docs/service-registry.md` (project-root only) | `.agent/git.yaml` `repos:` |
+| `.agent/project/modules/<id>/HISTORY.md` (per module) | cycles + completion.md |
+| `.agent/dashboard.md` (any tier) | project state + episodic + doc mtimes |
+
+Coda can read these without invoking the generator: they're refreshed
+on every `sync` / `project regenerate` / pre-commit-with-docs-change.
+`HISTORY.md` answers "what's happened in this module?" without walking
+the cycle tree.
+
+### Service-repo as child of project-root (0.4.8)
+
+Service-repo `CLAUDE.md` now carries `../`-prefixed `INHERITED`
+pointers at the parent's brief, rules, git.md, architecture, style,
+patterns, plan.yaml, SCOPE, CONTRACTS, modules, dashboard, contracts
+rollup, and `docs/{service-registry,shared-contracts,dependency-map,
+architecture,bug-registry,anti-patterns}`. Local pointers come first
+in each category section, inherited below.
+
+`../.agent/git.yaml` is **deliberately omitted** — git.yaml is
+project-root scope. Service-repo devs read the rendered `git.md`
+dashboard, not the YAML source.
+
+### Auto-regeneration on docs change (0.4.9)
+
+Pre-commit hook (`dotagent observe pre-commit`) now re-renders every
+enabled adapter when staged files include `docs/*.md`. Regenerated
+files are NOT auto-staged — the developer decides. Opt-out:
+`hooks.auto_regen_on_docs: false`. Failures logged, never block the
+commit.
+
+### Manifest preview CLI (0.4.8)
+
+`dotagent manifest` prints the v3 manifest to stdout without writing
+anywhere. Useful for diffing against on-disk CLAUDE.md
+(`dotagent manifest --diff CLAUDE.md` — timestamp-normalized).
+
+### Quick v0.5 cheat sheet for Coda
+
+| Need | Command |
+|---|---|
+| Read the navigation manifest | `cat CLAUDE.md` (or `dotagent manifest`) |
+| List docs an agent should update for a changed file set | `dotagent doc-coverage --files A,B,C --format json` |
+| Refresh derived files without changing state | `dotagent project regenerate` |
+| Check whether a path is claimed by an FM-### | Parse `docs/feature_master/FM-*.md`, look for the path in `## files` sections — or call `doc-coverage` and inspect `fm_ids` |
+| Detect if a hand-maintained doc was accidentally written | `git status docs/feature_master/ docs/ops/` after `dotagent sync` — should always be empty |
+
+---
+
 ## Section 9 — Troubleshooting
 
 | Symptom | Cause | Fix |
