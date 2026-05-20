@@ -78,6 +78,12 @@ _BASELINE_SECTIONS = {
         "- `alembic downgrade -1` reverts the 2026_05_jwt_keys migration\n"
         "  followed by `pytest tests/auth/test_rotation.py::test_smoke_post_revert`\n"
     ),
+    "business-traceability": (
+        "**Feature(s):** FEAT-01\n"
+        "**Objective(s):** OBJ-01, OBJ-02\n"
+        "- recovery via email completes within 5 minutes\n"
+        "- prior sessions invalidated on password change\n"
+    ),
 }
 
 
@@ -89,6 +95,7 @@ def _body(**overrides: str) -> str:
     order = [
         "scope", "acceptance-criteria", "must-not-regress", "doc-surfaces",
         "out-of-scope", "test-plan", "uat-proof", "rollback-plan",
+        "business-traceability",
     ]
     for anchor in order:
         parts.append(f"\n<!-- anchor: {anchor} -->\n## {anchor.replace('-', ' ').title()}\n\n")
@@ -103,13 +110,14 @@ def _signal(result, sid: str):
 # ---- band thresholds ------------------------------------------------------
 
 def test_band_for_thresholds():
+    # Updated for v0.5: rubric max is now 33 (S11 added). Bands shifted up.
+    assert band_for(33) == BAND_READY
     assert band_for(30) == BAND_READY
-    assert band_for(27) == BAND_READY
-    assert band_for(26) == BAND_POLISH
-    assert band_for(22) == BAND_POLISH
-    assert band_for(21) == BAND_REWORK
-    assert band_for(16) == BAND_REWORK
-    assert band_for(15) == BAND_NOT_READY
+    assert band_for(29) == BAND_POLISH
+    assert band_for(24) == BAND_POLISH
+    assert band_for(23) == BAND_REWORK
+    assert band_for(18) == BAND_REWORK
+    assert band_for(17) == BAND_NOT_READY
     assert band_for(0) == BAND_NOT_READY
 
 
@@ -333,9 +341,12 @@ def test_s10_zero_when_migration_present_but_no_rollback_or_perf_or_obs():
 # ---- composite fixtures ---------------------------------------------------
 
 def test_perfect_30_30_fixture_scores_30():
-    """Baseline fixture is engineered to score exactly 30."""
+    """Baseline fixture is engineered to score perfect on every signal.
+
+    Pre-v0.5 max was 30; with S11 added the new ceiling is 33.
+    """
     result = score_contract(_body())
-    assert result.total == 30, [f"{s.id}={s.score}" for s in result.signals]
+    assert result.total == 33, [f"{s.id}={s.score}" for s in result.signals]
     assert result.band == BAND_READY
 
 

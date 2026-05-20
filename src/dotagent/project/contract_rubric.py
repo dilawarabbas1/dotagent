@@ -9,7 +9,7 @@ does not persist it — Coda's orchestrator owns score persistence and the
 "refuse convergence below 27" enforcement. This module just answers the
 question "what's this contract's grade right now?"
 
-## Signal map (S1..S10)
+## Signal map (S1..S11)
 
   S1  Scope is intent only           (max 3)
   S2  Scope is bounded                (max 3)
@@ -21,8 +21,9 @@ question "what's this contract's grade right now?"
   S8  Surfaces touched is concrete    (max 3)
   S9  Out of scope is phase-tagged    (max 3)
   S10 Rollback / perf / observability (max 3)
+  S11 Business traceability (FEAT+OBJ)(max 3)
 
-  Total: 30. Bands: 27-30 ready, 22-26 polish, 16-21 rework, ≤15 not_ready.
+  Total: 33. Bands: 30-33 ready, 24-29 polish, 18-23 rework, ≤17 not_ready.
 
 The actual signal implementations live in `_signals.py` adjacent to this file;
 this module is the public dataclass + entry-point surface.
@@ -41,16 +42,16 @@ BAND_REWORK = "rework"      # 16-21
 BAND_NOT_READY = "not_ready"  # 0-15
 
 SIGNAL_MAX = 3
-TOTAL_MAX = 30
+TOTAL_MAX = 33
 
 
 def band_for(total: int) -> str:
-    """Map a 0-30 total to a band name."""
-    if total >= 27:
+    """Map a 0-33 total to a band name."""
+    if total >= 30:
         return BAND_READY
-    if total >= 22:
+    if total >= 24:
         return BAND_POLISH
-    if total >= 16:
+    if total >= 18:
         return BAND_REWORK
     return BAND_NOT_READY
 
@@ -128,6 +129,7 @@ def score_contract(body: str) -> ContractScore:
         s8_surfaces_concrete,
         s9_out_of_scope_phase_tagged,
         s10_rollback_perf_observability,
+        s11_business_traceability,
     )
 
     signals = [
@@ -141,6 +143,7 @@ def score_contract(body: str) -> ContractScore:
         s8_surfaces_concrete(body),
         s9_out_of_scope_phase_tagged(body),
         s10_rollback_perf_observability(body),
+        s11_business_traceability(body),
     ]
     total = sum(s.score for s in signals)
     return ContractScore(

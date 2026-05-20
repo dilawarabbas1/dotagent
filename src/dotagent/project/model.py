@@ -222,6 +222,9 @@ class Module:
     cycles: list[Cycle] = field(default_factory=list)
     blocked_reason: str = ""
     pre_block_state: str = ""        # so `unblock` restores correctly
+    # PR #6 — traceability fields
+    implements_features: list[str] = field(default_factory=list)  # FEAT-NN ids
+    cross_module: str = ""                                         # for cross-service slices
     # per-module tool overrides
     tools: dict = field(default_factory=dict)
 
@@ -255,6 +258,8 @@ class Module:
             "blocked_reason": self.blocked_reason,
             "pre_block_state": self.pre_block_state,
             "tools": self.tools,
+            "implements_features": list(self.implements_features),
+            "cross_module": self.cross_module,
         }
 
     @classmethod
@@ -281,6 +286,8 @@ class Module:
             blocked_reason=d.get("blocked_reason", ""),
             pre_block_state=d.get("pre_block_state", ""),
             tools=d.get("tools") or {},
+            implements_features=list(d.get("implements_features") or []),
+            cross_module=d.get("cross_module", ""),
         )
 
 
@@ -300,6 +307,13 @@ class Project:
     module_ids: list[str] = field(default_factory=list)   # ordered list (for index assignment)
     tools: dict = field(default_factory=dict)             # defaults per role
 
+    # PR #6 — brief traceability fields
+    brief: str = ""                                                # path to project_brief.md
+    brief_version: int = 0
+    brief_objectives_covered: list[str] = field(default_factory=list)
+    brief_features_covered: list[str] = field(default_factory=list)
+    features_to_modules: dict[str, list[str]] = field(default_factory=dict)
+
     # transient: loaded modules
     modules: dict[str, Module] = field(default_factory=dict)
 
@@ -315,6 +329,11 @@ class Project:
             "created_at": self.created_at, "updated_at": self.updated_at,
             "module_ids": self.module_ids,
             "tools": self.tools,
+            "brief": self.brief,
+            "brief_version": self.brief_version,
+            "brief_objectives_covered": list(self.brief_objectives_covered),
+            "brief_features_covered": list(self.brief_features_covered),
+            "features_to_modules": dict(self.features_to_modules),
         }
 
     @classmethod
@@ -329,6 +348,11 @@ class Project:
             created_at=d.get("created_at", ""), updated_at=d.get("updated_at", ""),
             module_ids=list(d.get("module_ids") or []),
             tools=d.get("tools") or {},
+            brief=d.get("brief", ""),
+            brief_version=int(d.get("brief_version") or 0),
+            brief_objectives_covered=list(d.get("brief_objectives_covered") or []),
+            brief_features_covered=list(d.get("brief_features_covered") or []),
+            features_to_modules=dict(d.get("features_to_modules") or {}),
         )
 
 

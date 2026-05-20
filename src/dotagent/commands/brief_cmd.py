@@ -40,6 +40,29 @@ def _brief_path(repo: Path) -> Path:
     return repo / ".agent" / "project_brief.md"
 
 
+def _run_chain_audit(brief, repo: Path) -> list[dict]:
+    """Run OBJ→FEAT→Module→Contract audit. Returns dicts compatible with
+    the in-progress `findings` list (severity/code/message/fix)."""
+    try:
+        from ..paths import Paths
+        from ..project.model import load_project
+        from ..project.traceability import audit, load_active_contracts
+    except ImportError:
+        return []
+
+    paths = Paths(repo=repo)
+    try:
+        project = load_project(paths)
+    except Exception:
+        # Plan absent or unparseable — skip silently.
+        return []
+
+    modules = list(project.modules.values()) if project else []
+    contracts = load_active_contracts(repo, modules)
+    report = audit(brief, project, modules, contracts)
+    return [f.to_dict() for f in report.findings]
+
+
 @brief_group.command(name="init", help="Create project_brief.md from interactive Q&A (or stub).")
 @click.option("--name", default="", help="Project name.")
 @click.option("--owner", default="", help="Owner email/name.")
@@ -258,6 +281,10 @@ def check_cmd(fmt: str, max_age_days: int) -> None:
                 "message": f"could not parse Last reviewed: {b.last_reviewed!r}",
                 "fix": "use ISO 8601 date (YYYY-MM-DD)",
             })
+
+    # Chain audit: OBJ → FEAT → Module → Contract. Best-effort: if plan or
+    # modules are absent (single-repo without project init), skip silently.
+    findings.extend(_run_chain_audit(b, repo))
 
     ok = not any(f["severity"] == "fail" for f in findings)
     if fmt == "json":

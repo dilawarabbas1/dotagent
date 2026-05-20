@@ -28,10 +28,10 @@ def test_json_output_round_trips_and_has_expected_keys(tmp_path: Path, monkeypat
     payload = json.loads(result.output)
     assert set(payload.keys()) == {"total", "max", "band", "signals"}
     assert isinstance(payload["total"], int)
-    assert payload["max"] == 30
+    assert payload["max"] == 33
     assert payload["band"] in {"ready", "polish", "rework", "not_ready"}
     assert isinstance(payload["signals"], list)
-    assert len(payload["signals"]) == 10
+    assert len(payload["signals"]) == 11
     for s in payload["signals"]:
         assert set(s.keys()) == {"id", "name", "score", "max", "evidence", "fix"}
         assert s["id"].startswith("S")
@@ -52,7 +52,7 @@ def test_default_output_is_human_summary_not_json(tmp_path: Path, monkeypatch):
     # not JSON
     assert not result.output.lstrip().startswith("{")
     assert "Contract:" in result.output
-    assert "/30" in result.output
+    assert "/33" in result.output
 
 
 def test_report_output_is_markdown_table(tmp_path: Path, monkeypatch):
@@ -67,5 +67,5 @@ def test_report_output_is_markdown_table(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "# Contract score" in result.output
     assert "| Signal | Score | Evidence | Fix |" in result.output
-    for sid in ("S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10"):
+    for sid in ("S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11"):
         assert sid in result.output

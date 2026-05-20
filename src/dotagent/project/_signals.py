@@ -609,3 +609,63 @@ def has_migration_trigger(body: str) -> bool:
         _authored(sections.get("rollback-plan", "")),
     ]
     return any(_MIGRATION_TRIGGER.search(h) for h in haystacks)
+
+
+# ---- S11: business-traceability ---------------------------------------------
+
+_FEAT_REF_RE = re.compile(r"\bFEAT-\d+\b")
+_OBJ_REF_RE = re.compile(r"\bOBJ-\d+\b")
+
+
+def s11_business_traceability(body: str) -> SignalScore:
+    """Every contract must cite at least one FEAT and one OBJ from
+    project_brief.md. Scoring:
+
+        0/3  no FEAT-NN cited anywhere in business-traceability section
+        1/3  FEAT-NN cited but no OBJ-NN
+        2/3  both FEAT-NN and OBJ-NN cited, but no behavior bullets
+             (just IDs, no narrative)
+        3/3  FEAT-NN + OBJ-NN + at least one populated bullet under the
+             section (real traceability narrative)
+
+    Only the author-written content of the business-traceability section
+    counts. The template's `_(populate ...)_` placeholder is filtered out.
+    """
+    sections = _sections(body)
+    section = sections.get("business-traceability", "")
+    authored = _authored(section)
+    placeholder_stripped = _PLACEHOLDER_RE.sub("", authored)
+
+    feats = set(_FEAT_REF_RE.findall(placeholder_stripped))
+    objs = set(_OBJ_REF_RE.findall(placeholder_stripped))
+
+    if not feats:
+        return SignalScore(
+            id="S11", name="Business traceability (FEAT+OBJ)", score=0,
+            evidence="no FEAT-NN cited in business-traceability section",
+            fix="add `**Feature(s):** FEAT-NN` and `**Objective(s):** OBJ-NN` referencing project_brief.md",
+        )
+    if not objs:
+        return SignalScore(
+            id="S11", name="Business traceability (FEAT+OBJ)", score=1,
+            evidence=f"FEAT-NN cited ({len(feats)}) but no OBJ-NN",
+            fix="add `**Objective(s):** OBJ-NN` to cite the business objectives served",
+        )
+
+    # Real bullets in the authored portion (not just ID lines)
+    real_bullets = [
+        b for b in _bullets(section)
+        if not _PLACEHOLDER_RE.search(b)
+        and not re.fullmatch(r"\s*\*\*?[A-Za-z][\w ()]*\*?\*:\s*[A-Z]+-\d+(?:[,\s]+[A-Z]+-\d+)*\s*", b)
+    ]
+    if not real_bullets:
+        return SignalScore(
+            id="S11", name="Business traceability (FEAT+OBJ)", score=2,
+            evidence=f"FEAT-NN and OBJ-NN cited but no behavior bullets",
+            fix="add bullets describing which FEAT behaviors this slice must satisfy",
+        )
+
+    return SignalScore(
+        id="S11", name="Business traceability (FEAT+OBJ)", score=3,
+        evidence=f"cites {len(feats)} FEAT-NN, {len(objs)} OBJ-NN, {len(real_bullets)} bullet(s)",
+    )
