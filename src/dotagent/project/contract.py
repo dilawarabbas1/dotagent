@@ -55,7 +55,8 @@ SECTION_ANCHORS = (
     "out-of-scope",
     "test-plan",
     "uat-proof",
-    "rollback-plan",  # added v0.4 — required for migration-bearing cycles, optional placeholder otherwise
+    "rollback-plan",          # added v0.4 — required for migration-bearing cycles, optional placeholder otherwise
+    "business-traceability",  # added v0.5 — every contract cites FEAT + OBJ from project_brief.md
     "negotiation-log",
 )
 
@@ -235,6 +236,17 @@ _TEMPLATE = """\
 > `(none — additive change only)`. (Part of S10.)
 
 - _(no entries yet — agents to populate)_
+
+<!-- anchor: business-traceability -->
+## Business traceability
+
+> Every contract must cite at least one **FEAT-NN** (from `project_brief.md`)
+> and at least one **OBJ-NN**. Without these, this cycle has no anchor to
+> the business "why" — refuse to converge. (Scored as S11: max 3 points.)
+
+- **Feature(s):** _(populate with FEAT-NN ids from project_brief.md)_
+- **Objective(s) served:** _(populate with OBJ-NN ids)_
+- _Behavior bullets from the feature(s) this slice must satisfy:_
 
 <!-- anchor: negotiation-log -->
 ## Negotiation log
