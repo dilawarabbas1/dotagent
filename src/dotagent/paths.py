@@ -115,6 +115,11 @@ class Paths:
         return self.agent / ".imported"
 
     @property
+    def project_brief(self) -> Path:
+        """The durable business-intent brief. Hand-written (or AI-drafted)."""
+        return self.agent / "project_brief.md"
+
+    @property
     def version_file(self) -> Path:
         """Stamp of the schema version this `.agent/` tree was written against."""
         return self.agent / ".version"
