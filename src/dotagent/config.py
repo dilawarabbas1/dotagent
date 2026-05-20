@@ -22,7 +22,27 @@ DEFAULT_CONFIG: dict = {
         "db_impact_map": "docs/db-impact-map.md",
         "dependency_map": "docs/dependency-map.md",
         "architecture": "docs/architecture.md",
-        "extra": [],
+        # Hand-maintained feature documentation system. Indexed if files
+        # exist; silently skipped if they don't (so single-repo projects
+        # without this convention aren't affected). dotagent NEVER
+        # generates these — see docs/HAND_MAINTAINED_DOCS_CONVENTION.md.
+        "extra": [
+            {"name": "feature_master", "path": "docs/feature_master.md", "kind": "generic"},
+            {"name": "db_impact_master", "path": "docs/db-impact-map-master.md", "kind": "db_impact_map"},
+            {"name": "db_impact_tenant", "path": "docs/db-impact-map-tenant.md", "kind": "db_impact_map"},
+            {"name": "db_impact_vector", "path": "docs/db-impact-map-vector.md", "kind": "db_impact_map"},
+            {"name": "redis_tenant", "path": "docs/redis-key-registry-tenant.md", "kind": "redis_keys"},
+            {"name": "redis_global", "path": "docs/redis-key-registry-global.md", "kind": "redis_keys"},
+            {"name": "redis_events", "path": "docs/redis-key-registry-events.md", "kind": "redis_keys"},
+            {"name": "bug_registry_infrastructure", "path": "docs/bug-registry-infrastructure.md", "kind": "bug_registry"},
+            {"name": "bug_registry_agents", "path": "docs/bug-registry-agents.md", "kind": "bug_registry"},
+            {"name": "bug_registry_orchestrator", "path": "docs/bug-registry-orchestrator.md", "kind": "bug_registry"},
+            {"name": "architecture_narrative", "path": "docs/ARCHITECTURE.md", "kind": "architecture"},
+            {"name": "ops_service_registry", "path": "docs/ops/service-registry.md", "kind": "generic"},
+            {"name": "ops_server_dependencies", "path": "docs/ops/server-dependencies.md", "kind": "generic"},
+            {"name": "ops_tuning", "path": "docs/ops/tuning.md", "kind": "generic"},
+            {"name": "ops_tls_and_env", "path": "docs/ops/tls-and-env.md", "kind": "generic"},
+        ],
     },
     "context": {
         "bug_registry_top_n": 15,
