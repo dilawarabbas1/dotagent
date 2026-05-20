@@ -292,47 +292,80 @@ def parse(text: str) -> Brief:
 
     sections = _split_h2(text)
 
-    if "Vision (one sentence)" in sections:
-        body = sections["Vision (one sentence)"].strip()
-        # First non-empty line wins
-        for line in body.splitlines():
+    def _section(*candidates: str) -> str:
+        """Return the body for the first matching H2 heading.
+
+        Matches are case-insensitive and tolerant of trailing
+        parenthetical suffixes (`Features (capabilities)`, `Features &
+        capabilities`, etc.).
+        """
+        lower_map = {k.lower(): v for k, v in sections.items()}
+        for want in candidates:
+            wl = want.lower()
+            if wl in lower_map:
+                return lower_map[wl]
+            # Tolerate "Features (...)", "Features & capabilities", etc.
+            for k_lower, body in lower_map.items():
+                if k_lower == wl:
+                    return body
+                if k_lower.startswith(wl + " ") or k_lower.startswith(wl + "("):
+                    return body
+        return ""
+
+    vision_body = _section("Vision (one sentence)", "Vision")
+    if vision_body:
+        for line in vision_body.strip().splitlines():
             line = line.strip()
             if line and not line.startswith("<!--"):
                 brief.vision = line
                 break
 
-    if "Target users" in sections:
-        brief.personas = _bullets(sections["Target users"])
+    personas_body = _section("Target users", "Personas", "Users")
+    if personas_body:
+        brief.personas = _bullets(personas_body)
 
-    if "Business objectives" in sections:
-        brief.objectives = _parse_objectives(sections["Business objectives"])
+    objectives_body = _section("Business objectives", "Objectives")
+    if objectives_body:
+        brief.objectives = _parse_objectives(objectives_body)
 
-    if "Features" in sections:
-        brief.features = _parse_features(sections["Features"])
+    features_body = _section("Features", "Capabilities")
+    if features_body:
+        brief.features = _parse_features(features_body)
 
-    if "Value propositions" in sections:
-        brief.value_props = _bullets(sections["Value propositions"])
+    value_props_body = _section("Value propositions", "Value")
+    if value_props_body:
+        brief.value_props = _bullets(value_props_body)
 
-    if "Business success metrics" in sections:
-        brief.success_metrics = _bullets(sections["Business success metrics"])
+    metrics_body = _section("Business success metrics", "Success metrics", "Metrics")
+    if metrics_body:
+        brief.success_metrics = _bullets(metrics_body)
 
-    if "Non-goals (business)" in sections:
-        brief.non_goals = _bullets(sections["Non-goals (business)"])
+    non_goals_body = _section("Non-goals (business)", "Non-goals")
+    if non_goals_body:
+        brief.non_goals = _bullets(non_goals_body)
 
-    if "Constraints" in sections:
-        brief.constraints = _bullets(sections["Constraints"])
+    constraints_body = _section("Constraints")
+    if constraints_body:
+        brief.constraints = _bullets(constraints_body)
 
-    if "Hard rules" in sections:
-        brief.hard_rules = _parse_hard_rules(sections["Hard rules"])
+    rules_body = _section("Hard rules", "Rules")
+    if rules_body:
+        brief.hard_rules = _parse_hard_rules(rules_body)
 
-    if "Glossary" in sections:
-        brief.glossary = _parse_glossary(sections["Glossary"])
+    glossary_body = _section("Glossary")
+    if glossary_body:
+        brief.glossary = _parse_glossary(glossary_body)
 
-    if "Tenancy & security posture" in sections:
-        brief.tenancy_lines = _bullets(sections["Tenancy & security posture"])
+    tenancy_body = _section(
+        "Tenancy & security posture", "Tenancy and security posture",
+        "Security posture", "Tenancy",
+    )
+    if tenancy_body:
+        brief.tenancy_lines = _bullets(tenancy_body)
 
-    if "External integrations" in sections:
-        brief.integrations = _parse_integrations(sections["External integrations"])
+    integrations_body = _section("External integrations", "Integrations")
+    if integrations_body:
+        brief.integrations = _parse_integrations(integrations_body)
 
     return brief
 
@@ -374,18 +407,40 @@ def _bullets(body: str) -> list[str]:
 
 
 def _parse_objectives(body: str) -> list[Objective]:
+    """Parse OBJ-NN bullets. Tolerant of three shapes:
+
+      - **OBJ-01**: description
+      - **OBJ-01 · Title**: description           (title inside bold span)
+      - **OBJ-01 · Title** description           (no colon)
+
+    For the latter two, `Objective.text` becomes `"Title — description"`
+    (or just one, whichever is populated) so we never lose the title.
+    """
     out: list[Objective] = []
     for line in body.splitlines():
         m = _BULLET_RE.match(line)
         if not m:
             continue
         content = m.group(1).strip()
-        # **OBJ-NN**: description
-        id_match = re.match(
-            r"\*\*(OBJ-\d+)\*\*\s*:?\s*(.+)$", content
-        )
-        if id_match:
-            out.append(Objective(id=id_match.group(1), text=id_match.group(2).strip()))
+        # Match the bold span and capture (bold-inside) + (text-after-bold)
+        bold_match = re.match(r"\*\*\s*([^*]+?)\s*\*\*\s*:?\s*(.*)$", content)
+        if not bold_match:
+            continue
+        bold_inside = bold_match.group(1)
+        after_bold = bold_match.group(2).strip()
+        # Inside the bold, the leading token is the ID; everything else is title
+        id_match = re.match(r"^(OBJ-\d+)\b\s*[·:\-—]?\s*(.*)$", bold_inside)
+        if not id_match:
+            continue
+        obj_id = id_match.group(1)
+        title_in_bold = id_match.group(2).strip()
+        # Compose the user-visible text. Prefer "title — description" if both;
+        # else whichever exists; else empty.
+        if title_in_bold and after_bold:
+            text = f"{title_in_bold} — {after_bold}"
+        else:
+            text = title_in_bold or after_bold
+        out.append(Objective(id=obj_id, text=text))
     return out
 
 
