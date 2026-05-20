@@ -221,6 +221,51 @@ def _check_canonical_structure(paths: Paths) -> Diagnosis:
     )
 
 
+def _check_bug_id_prefix(paths: Paths, cfg: Config) -> Diagnosis:
+    """Warn when bug-registry has entries but no `bugs.id_prefix` declared,
+    or when the declared prefix doesn't match the entries in the file.
+    """
+    bug_file = paths.repo / "docs" / "bug-registry.md"
+    if not bug_file.exists():
+        return Diagnosis(name="bug-prefix", status=_INFO, message="no bug-registry to check")
+    declared = (cfg.raw.get("bugs") or {}).get("id_prefix") or ""
+    declared = str(declared).strip().upper()
+
+    # Find the most common prefix in actual entries.
+    from .sources import _parse_bug_registry, _prefix_of
+    entries = _parse_bug_registry(bug_file.read_text())
+    if not entries:
+        return Diagnosis(name="bug-prefix", status=_OK, message="bug-registry empty")
+    actual = {}
+    for e in entries:
+        p = _prefix_of(e.id)
+        if p:
+            actual[p] = actual.get(p, 0) + 1
+    if not actual:
+        return Diagnosis(
+            name="bug-prefix", status=_WARN,
+            message="bug-registry has entries but none use a recognizable ID prefix",
+            fix="rename entries to `<PREFIX>-NNNN` and set `bugs.id_prefix` in config",
+        )
+    dominant = max(actual, key=actual.get)
+    if not declared:
+        return Diagnosis(
+            name="bug-prefix", status=_WARN,
+            message=f"bug-registry uses prefix {dominant!r} but config declares none",
+            fix=f"add `bugs.id_prefix: {dominant}` to .agent/config.yaml",
+        )
+    if declared != dominant:
+        return Diagnosis(
+            name="bug-prefix", status=_WARN,
+            message=f"declared prefix {declared!r} does not match dominant entry prefix {dominant!r}",
+            fix="reconcile config and bug-registry entries",
+        )
+    return Diagnosis(
+        name="bug-prefix", status=_OK,
+        message=f"prefix {declared!r} matches {actual[dominant]} entry/entries",
+    )
+
+
 def _check_archive_pending(paths: Paths) -> Diagnosis:
     """Report info-level count of entries eligible for archival."""
     try:
@@ -264,6 +309,7 @@ def run_checks() -> list[Diagnosis]:
     cfg = Config.load(paths)
     out.append(_check_canonical_structure(paths))
     out.append(_check_archive_pending(paths))
+    out.append(_check_bug_id_prefix(paths, cfg))
     out.append(_check_sources(paths, cfg))
     out.append(_check_hooks(paths))
     out.append(_check_episodic_index(paths))
