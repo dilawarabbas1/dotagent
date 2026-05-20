@@ -115,7 +115,18 @@ def cmd_status() -> None:
     paths = _paths()
     project = require_project(paths)
     s = project_status(project)
-    click.echo(f"project:  {s['name']}")
+    # Fall back to brief.name when plan.yaml's name is empty — common in
+    # the layered-tier shape where plan.yaml omits top-level fields.
+    name = s["name"]
+    if not name:
+        try:
+            from ..project.brief import load as _load_brief
+            brief = _load_brief(paths.project_brief)
+            if brief and brief.name:
+                name = brief.name
+        except Exception:  # noqa: BLE001
+            pass
+    click.echo(f"project:  {name or '(unset)'}")
     click.echo(f"modules:  {s['shipped']}/{s['modules_total']} shipped"
                f"  ({s['percent_complete']:.0f}% complete)")
     if s["blocked"]:

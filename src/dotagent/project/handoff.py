@@ -338,16 +338,46 @@ def render_scope(project: Project, *, brief=None) -> str:
     layered-tier plan.yaml shape — fall back to the brief where possible
     so a regenerate doesn't hollow out the file.
     """
-    # Project field fallbacks
+    # Project field fallbacks.
+    #
+    # We distinguish goal (one-line intent) from description (longer context)
+    # so they don't both collapse to the brief's vision sentence when plan.yaml
+    # is thin. Composition rules:
+    #
+    #   - goal: prefer project.goal, else brief.vision (terse), else placeholder
+    #   - description: prefer project.description; else the brief's first OBJ
+    #     text; else assemble from features list; else placeholder. Only falls
+    #     back to vision if NOTHING else is available.
     name = (project.name
             or (getattr(brief, "name", "") if brief else "")
             or "(unset — add `name:` to plan.yaml or the brief)")
     goal = (project.goal
             or (getattr(brief, "vision", "") if brief else "")
             or "_(unset — add `goal:` to plan.yaml)_")
-    description = (project.description
-                   or (getattr(brief, "vision", "") if brief else "")
-                   or "_(unset — add `description:` to plan.yaml)_")
+
+    def _description_fallback() -> str:
+        if not brief:
+            return "_(unset — add `description:` to plan.yaml)_"
+        # Prefer first OBJ text — it's the most concrete project description we have
+        objectives = getattr(brief, "objectives", None) or []
+        if objectives:
+            obj_lines = [f"- {o.id}: {o.text}" for o in objectives[:5]]
+            return (
+                "Top business objectives this project delivers:\n\n"
+                + "\n".join(obj_lines)
+            )
+        # Then top features
+        features = getattr(brief, "features", None) or []
+        if features:
+            feat_lines = [
+                f"- **{f.id}** ({f.name}) — {f.expected_outcome or 'no outcome set'}"
+                for f in features[:5]
+            ]
+            return "Features the project will ship:\n\n" + "\n".join(feat_lines)
+        # Last resort: vision (same as goal, but better than empty)
+        return getattr(brief, "vision", "") or "_(unset — add `description:` to plan.yaml)_"
+
+    description = project.description or _description_fallback()
     out_of_scope = (project.out_of_scope
                     or (getattr(brief, "non_goals", []) if brief else []))
     success_criteria = (project.success_criteria
