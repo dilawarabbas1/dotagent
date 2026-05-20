@@ -56,9 +56,9 @@ def _minimal_ctx(paths: Paths) -> Context:
 # Default (flag OFF) → v1 compendium
 # ---------------------------------------------------------------------------
 
-def test_claude_adapter_uses_v1_when_flag_off(tmp_path: Path):
-    """Default config (no `render.use_manifest`) → v1 path."""
-    paths = _scaffolded(tmp_path)
+def test_claude_adapter_uses_v1_when_flag_explicitly_off(tmp_path: Path):
+    """`render.use_manifest: false` (explicit opt-out) → v1 path."""
+    paths = _scaffolded(tmp_path, render_config={"use_manifest": False})
     adapter = ClaudeAdapter(paths)
     files = adapter.render(_minimal_ctx(paths))
 
@@ -70,16 +70,29 @@ def test_claude_adapter_uses_v1_when_flag_off(tmp_path: Path):
     assert "WORKFLOW CONTRACT" not in body
 
 
-def test_cursor_copilot_opencode_use_v1_when_flag_off(tmp_path: Path):
-    """Every adapter respects the flag, not just Claude."""
-    paths = _scaffolded(tmp_path)
+def test_cursor_copilot_opencode_use_v1_when_flag_explicitly_off(tmp_path: Path):
+    """Every adapter respects an explicit opt-out, not just Claude."""
+    paths = _scaffolded(tmp_path, render_config={"use_manifest": False})
     ctx = _minimal_ctx(paths)
     for adapter_cls in (CursorAdapter, CopilotAdapter, OpenCodeAdapter):
         adapter = adapter_cls(paths)
         body = adapter.render(ctx)[0].content
         assert "WORKFLOW CONTRACT" not in body, (
-            f"{adapter_cls.__name__} produced manifest output despite flag off"
+            f"{adapter_cls.__name__} produced manifest output despite explicit opt-out"
         )
+
+
+def test_default_config_emits_v3_manifest(tmp_path: Path):
+    """v0.5.0+ default: `merge_defaults` sets `use_manifest: True` so the
+    manifest renderer is the default render path."""
+    paths = _scaffolded(tmp_path)  # no override → use the default
+    adapter = ClaudeAdapter(paths)
+    body = adapter.render(_minimal_ctx(paths))[0].content
+    # v3 signatures present
+    assert "HOW TO READ THIS FILE" in body
+    assert "WORKFLOW CONTRACT" in body
+    # v1 header should be absent
+    assert "Project context for Claude Code" not in body
 
 
 # ---------------------------------------------------------------------------

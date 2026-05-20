@@ -5,8 +5,8 @@ instead of `render_body()` directly. This function reads
 `render.use_manifest` from `.agent/config.yaml` and dispatches to the
 right renderer.
 
-- `false` (default during v0.4.x): legacy `render_body()` — embedded content
 - `true` (default at v0.5.0+):     manifest `render_manifest()` — pointers
+- `false` (opt-out):                legacy `render_body()` — embedded content
 
 Tool label is preserved for the v1 path (changes the header). The v3
 manifest is tool-agnostic (same body regardless of which AI reads it)
