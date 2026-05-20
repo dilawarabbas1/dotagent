@@ -358,6 +358,12 @@ _SINGLE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".agent/rules.md", required=True, kind=KIND_FILE,
                 category=CAT_MUST_READ,
                 when_to_read="Hard rules — never violate."),
+    # Brief is OPTIONAL in single-repo tier but if present should be
+    # MUST_READ. SchemaEntry's category controls categorization regardless
+    # of whether the file exists on disk.
+    SchemaEntry(".agent/project_brief.md", required=False, kind=KIND_FILE,
+                category=CAT_MUST_READ,
+                when_to_read="Business intent: OBJ-NN, FEAT-NN, RULE-NN, vision, non-goals (if present)."),
     SchemaEntry(".agent/style.md", required=False, kind=KIND_FILE,
                 category=CAT_STYLE,
                 when_to_read="Code style baseline."),
