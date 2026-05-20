@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-05-20
+
+### Fixed
+- `contracts_rollup.RepoSummary` now distinguishes informational notes
+  from real errors via `note: str` + `is_error: bool` (the old `error`
+  field stays as a backward-compat alias that only fires on real errors).
+- Service repos that exist but don't run their own per-repo cycle no
+  longer render as `_error: no plan.yaml in repo_`. They render as
+  `_no cycles tracked here — meta tier owns project state_` — info,
+  not error. Valid topology for projects that keep all cycle state at
+  the meta tier (e.g. Aigent).
+- Repos missing `.agent/` entirely render as info `_no dotagent install
+  in this service repo_` instead of error.
+- Manifest entries pointing at non-existent paths still render as real
+  errors with a `⚠ error:` glyph so users can tell the difference at a glance.
+- Tests: +4 in `test_contracts_rollup.py` covering info/error distinction.
+
 ## [0.4.2] — 2026-05-20
 
 ### Fixed

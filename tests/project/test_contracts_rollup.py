@@ -128,3 +128,67 @@ def test_regenerate_writes_to_root_contracts_md(tmp_path: Path):
     assert target == paths.repo / "contracts.md"
     assert target.exists()
     assert target.read_text().startswith("<!-- GENERATED")
+
+
+# ---- info-vs-error distinction (0.4.3) ----------------------------------
+
+def test_service_repo_without_plan_is_info_not_error(tmp_path: Path):
+    """A service repo that exists but has no plan.yaml is a valid topology
+    (Aigent-style: cycles all live at meta tier). Should be info, not error."""
+    paths = _setup_project_root_with_manifest(tmp_path, [
+        {"id": "backend", "path": "./backend", "role": "api"},
+    ])
+    backend = paths.repo / "backend"
+    backend.mkdir()
+    (backend / ".agent").mkdir()  # has .agent but no plan.yaml
+
+    rollup = build_rollup(paths)
+    assert len(rollup.repos) == 1
+    repo = rollup.repos[0]
+    assert repo.is_error is False
+    assert "meta tier" in repo.note.lower() or "no cycles" in repo.note.lower()
+    assert repo.error == ""   # backward-compat alias only set on is_error
+
+
+def test_service_repo_without_dotagent_is_info_distinct_message(tmp_path: Path):
+    """Service repo exists but no .agent/ at all — also info, with a different
+    message so users can distinguish the cases."""
+    paths = _setup_project_root_with_manifest(tmp_path, [
+        {"id": "frontend", "path": "./frontend", "role": "frontend"},
+    ])
+    (paths.repo / "frontend").mkdir()  # no .agent/ inside
+
+    rollup = build_rollup(paths)
+    repo = rollup.repos[0]
+    assert repo.is_error is False
+    assert "dotagent install" in repo.note.lower()
+
+
+def test_path_missing_still_error(tmp_path: Path):
+    """A manifest entry pointing at a non-existent dir is still an error."""
+    paths = _setup_project_root_with_manifest(tmp_path, [
+        {"id": "ghost", "path": "./does-not-exist", "role": "api"},
+    ])
+
+    rollup = build_rollup(paths)
+    repo = rollup.repos[0]
+    assert repo.is_error is True
+    assert "path missing" in repo.note
+
+
+def test_render_markdown_uses_warning_glyph_for_real_errors(tmp_path: Path):
+    """Real errors render with ⚠ glyph; informational notes don't."""
+    paths = _setup_project_root_with_manifest(tmp_path, [
+        {"id": "ghost", "path": "./does-not-exist", "role": "api"},
+        {"id": "no-cycles", "path": "./no-cycles", "role": "frontend"},
+    ])
+    (paths.repo / "no-cycles").mkdir()
+    (paths.repo / "no-cycles" / ".agent").mkdir()
+
+    md = render_markdown(build_rollup(paths))
+    assert "⚠ error: path missing" in md
+    assert "meta tier" in md
+    # info row has no warning glyph
+    info_lines = [l for l in md.splitlines() if "no-cycles" in l]
+    for line in info_lines:
+        assert "⚠" not in line, f"info row should not have warning glyph: {line}"
