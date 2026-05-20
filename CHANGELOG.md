@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-05-20
+
+### Fixed
+- `Project.from_dict()` and `Module.from_dict()` no longer KeyError on
+  plan.yaml / module.yaml files that omit the top-level `name:` key.
+  This shape occurs in the new layered-tier plan.yaml (which can lead
+  with `brief_features_covered`, `features_to_modules`, `modules`, `repos`)
+  and previously crashed `dotagent project contracts rebuild` and any
+  other command that loaded the project model. Tolerant defaults:
+  `Project.name → ""`, `Module.name → module.id || ""`.
+  Regression covered by 7 new tests in `tests/project/test_loader_tolerance.py`.
+
 ## [0.4.0] — 2026-05-20
 
 Implementation of the **layered project architecture** plan
