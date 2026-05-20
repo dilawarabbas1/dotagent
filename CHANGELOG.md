@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-05-20
+
+### Fixed
+- `Project.from_dict()` now reads the layered-tier inline `modules:`
+  block (both dict-keyed-by-id and list-with-id shapes). Previously
+  the contracts loader ignored it, producing empty dashboards even
+  when the plan.yaml had every module populated.
+- `Project.to_dict()` round-trips the inline modules block so
+  `save_project()` no longer silently drops layered-tier data.
+- Non-Module fields (`repo`, `owner`, `deps`, `integrations`) in inline
+  records are stashed into `module.tools["_inline"]` so they survive
+  the round-trip without needing to be first-class on the dataclass.
+- `contracts_rollup` now accepts `alias:` or `name:` as fallbacks for
+  the `id:` key in `repos[]` entries (a shape Coda-generated plan.yaml
+  files have used).
+- Tests: 10 new in `tests/project/test_layered_plan_schema.py`.
+
 ## [0.4.1] — 2026-05-20
 
 ### Fixed
