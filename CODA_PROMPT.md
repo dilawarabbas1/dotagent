@@ -454,6 +454,38 @@ dotagent project contract round "$module_id" --actor claude
 
 ---
 
+## Section 7.5 — Brief parser tolerance (0.4.4+)
+
+The brief parser became significantly more forgiving in 0.4.4. If you
+inherit an older brief or one written by a different tool, these shapes
+now all parse:
+
+| Shape | Parses as |
+|---|---|
+| `- **OBJ-01**: foo` | id=OBJ-01, text="foo" |
+| `- **OBJ-01 · Universal AI chat layer**: foo` | id=OBJ-01, text="Universal AI chat layer — foo" |
+| `- **OBJ-01 · Some title**` (no description) | id=OBJ-01, text="Some title" |
+| `### FEAT-01` / `### FEAT-01 · Title` / `### FEAT-01: Title` | id=FEAT-01 |
+
+Section heading lookups (`## Features`, `## Business objectives`, etc.)
+are now case-insensitive and tolerant of synonyms + parenthetical
+suffixes:
+
+| What you write | Still matches |
+|---|---|
+| `## Capabilities` | the Features lookup |
+| `## Features (capabilities)` | the Features lookup |
+| `## Objectives` | the Business objectives lookup |
+| `## Personas` | the Target users lookup |
+| `## Rules` | the Hard rules lookup |
+| `## Integrations` | the External integrations lookup |
+| `## business objectives` (lowercase) | the Business objectives lookup |
+
+If you get an audit report saying "brief.json shows objectives:[],
+features:[]" — first check the user's dotagent version. If they're on
+0.4.3 or older, the fix is `dotagent update`. Only if they're on 0.4.4+
+AND the parser still returns empty do they need to reformat the brief.
+
 ## Section 8 — What changed in v0.4 (vs v0.3)
 
 If you're an existing Coda integration that worked against v0.3, here's
@@ -492,6 +524,15 @@ what's new (everything is additive — old commands still work):
 | `git verify` exits 1 | Pending changes violate branch rules | Move files to the correct branch / repo |
 | Empty `CLAUDE.md` | No brief or sources indexed | Run `dotagent sync` |
 | `--actor required` error | Missing `--actor` on plan/contract write | Add `--actor <role>` |
+| **brief.json `objectives:[]`, `features:[]` despite markdown defining them** | Pre-0.4.4 parser couldn't read `**OBJ-NN · Title**:` shape | `dotagent update` (0.4.4+ parses title-in-bold) |
+| **Dashboard titles render `Contracts in \`\``** (empty backticks) | plan.yaml missing top-level `name:` | Add `name: <project>` to top of plan.yaml (round-trip through `yaml.safe_dump`) |
+| **plan.yaml lost top-level fields after rewrite** (no `name`, `goal`, `success_criteria`) | A rewrite (brief-wiring, init, hand-edit) dropped them | Restore them from `plan.frozen.yaml` if available, else hand-add |
+| **rollup shows "no plan.yaml in repo" as error** (0.4.2 and earlier) | Old wording treated valid topology as failure | `dotagent update` (0.4.3+ shows it as info, not error) |
+| **`contracts rebuild` crashes `KeyError: 'name'`** | Pre-0.4.1 loader required `name:` key | `dotagent update` (0.4.1+ tolerates absence) |
+| **Inline `modules:` block in plan.yaml not picked up** | Pre-0.4.2 loader ignored it | `dotagent update` (0.4.2+ reads dict-of-dicts and list shapes) |
+| **`structure check` flags `SCOPE.md` "missing banner"** | Old `render_scope()` didn't emit banner | `dotagent update` (0.4.4+ emits banner) + run any project op to regenerate |
+| **Two FEAT-ID namespaces** (`FEAT-01..N` business + `FEAT-NNN` engineering) | Common drift when product + engineering write IDs independently | Pick one namespace; or add a mapping section to the brief: `**FEAT-01** ⇄ `FEAT-049`, `FEAT-115`` |
+| **Brief non-goal contradicts an architecture doc** (e.g., "no voice" in brief, voice arch present) | Real strategic drift between brief and code-truth | Either update the brief (if voice is in-scope) or annotate the arch section as "deferred, documented for future" |
 
 ---
 
