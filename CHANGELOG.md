@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0..0.7.0] — 2026-05-20
+## [0.4.0] — 2026-05-20
 
 Implementation of the **layered project architecture** plan
-(see `IMPLEMENTATION_PLAN.md`). 14 PRs across 7 phases. Net **+208 tests**
-(230 → 438 passing).
+(see `IMPLEMENTATION_PLAN.md`). 14 PRs shipped together in this release.
+Net **+208 tests** (230 → 438 passing).
 
 ### Added — Phase 0: Foundation (PRs #1–#2)
 - **Canonical structure schema** (`canonical_structure.py`): data-driven
