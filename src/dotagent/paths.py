@@ -115,6 +115,16 @@ class Paths:
         return self.agent / ".imported"
 
     @property
+    def git_yaml(self) -> Path:
+        """Layered project git layout: declares meta repo + service repos + branch rules."""
+        return self.agent / "git.yaml"
+
+    @property
+    def git_md(self) -> Path:
+        """Auto-generated dashboard summarizing git.yaml."""
+        return self.agent / "git.md"
+
+    @property
     def project_brief(self) -> Path:
         """The durable business-intent brief. Hand-written (or AI-drafted)."""
         return self.agent / "project_brief.md"
