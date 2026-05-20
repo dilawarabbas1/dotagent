@@ -221,6 +221,54 @@ def clone_services_cmd(dry_run: bool) -> None:
     sys.exit(0 if failures == 0 else 1)
 
 
+@git_group.command(
+    name="init-hooks",
+    help="Install the local pre-push hook in this meta-repo clone.",
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing hook.")
+def init_hooks_cmd(force: bool) -> None:
+    layout, paths, repo = _layout_or_die()
+    if layout.meta.strategy != STRATEGY_DEDICATED_REPO:
+        click.echo(
+            f"init-hooks only supported for strategy=dedicated_repo "
+            f"(current: {layout.meta.strategy}). Service repos do NOT need it.",
+            err=True,
+        )
+        sys.exit(1)
+    hook_target = repo / ".git" / "hooks" / "pre-push"
+    if not hook_target.parent.exists():
+        click.echo(f"not a git repository: no {hook_target.parent}", err=True)
+        sys.exit(1)
+    if hook_target.exists() and not force:
+        click.echo(f"hook already exists at {hook_target}; use --force.", err=True)
+        sys.exit(1)
+    import importlib.resources as ir
+    template_text = ir.files("dotagent.scaffolds.branch_protection").joinpath("pre-push.sh").read_text()
+    hook_target.write_text(template_text)
+    hook_target.chmod(0o755)
+    click.echo(f"✓ installed {hook_target}")
+
+
+@git_group.command(
+    name="scaffold-protection",
+    help="Write a GitHub Actions workflow that enforces branch rules server-side.",
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing workflow.")
+def scaffold_protection_cmd(force: bool) -> None:
+    layout, paths, repo = _layout_or_die()
+    workflow_dir = repo / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    target = workflow_dir / "branch-rules.yml"
+    if target.exists() and not force:
+        click.echo(f"workflow already exists at {target.relative_to(repo)}; use --force.", err=True)
+        sys.exit(1)
+    import importlib.resources as ir
+    template_text = ir.files("dotagent.scaffolds.branch_protection").joinpath("branch-rules.yml").read_text()
+    target.write_text(template_text)
+    click.echo(f"✓ wrote {target.relative_to(repo)}")
+    click.echo("→ enable branch protection in GitHub UI: require status check 'branch-rules' to pass.")
+
+
 @git_group.command(name="verify", help="Check pending changes against branch rules.")
 @click.option("--remote", default=None, help="Remote to look up rules for. Defaults to origin URL.")
 @click.option("--branch", default=None,
