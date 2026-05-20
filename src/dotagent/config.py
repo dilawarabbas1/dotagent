@@ -70,6 +70,16 @@ DEFAULT_CONFIG: dict = {
         "git_post_commit": True,
         "block_on_rule_violation": False,
     },
+    # Tiered bug registry conventions. id_prefix is this repo's bug ID prefix
+    # (e.g. "BE" for backend, "PORTAL" for the customer portal). Empty means
+    # "no prefix declared" — the parser falls back to whatever prefix the
+    # entries happen to use, with a doctor warning to set it explicitly.
+    # cross_reference_prefixes is the list of OTHER repos' prefixes that this
+    # repo expects to see references to (e.g. project-root's "AGT").
+    "bugs": {
+        "id_prefix": "",
+        "cross_reference_prefixes": [],
+    },
 }
 
 

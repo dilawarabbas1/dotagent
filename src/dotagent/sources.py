@@ -55,6 +55,10 @@ class SourceEntry:
     keys: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     raw_metadata: dict = field(default_factory=dict)
+    # IDs from OTHER repos this entry references (e.g. backend bug body
+    # mentions "AGT-0042" — the project-root bug it's the local slice of).
+    # Populated by extract_cross_references() during indexing.
+    cross_references: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -180,8 +184,42 @@ def _parse_bug_registry(text: str) -> list[SourceEntry]:
             components=components,
             tags=tags,
             raw_metadata=meta,
+            cross_references=extract_cross_references(body, self_prefix=_prefix_of(bug_id)),
         ))
     return out
+
+
+# Cross-references like "BE-0123", "AGT-0042", "PORTAL-0089".
+# The prefix is 2+ uppercase letters/digits/underscores; the number is 1+ digits.
+_CROSS_REF_RE = re.compile(r"\b([A-Z][A-Z0-9_]*)-(\d{1,6})\b")
+
+
+def extract_cross_references(body: str, *, self_prefix: str = "") -> list[str]:
+    """Find references to OTHER repos' bug IDs in this entry's body.
+
+    Returns a stable, deduplicated list. References to `self_prefix-NNN`
+    are filtered out (they're not cross-references — they're self-references).
+    Order is first-seen.
+    """
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for m in _CROSS_REF_RE.finditer(body or ""):
+        prefix = m.group(1)
+        if self_prefix and prefix == self_prefix:
+            continue
+        full = f"{prefix}-{m.group(2)}"
+        if full not in seen_set:
+            seen_set.add(full)
+            seen.append(full)
+    return seen
+
+
+def _prefix_of(entry_id: str) -> str:
+    """Extract the alpha prefix from an ID like 'BE-0042' → 'BE'."""
+    if not entry_id or "-" not in entry_id:
+        return ""
+    head = entry_id.rsplit("-", 1)[0]
+    return head if re.fullmatch(r"[A-Z][A-Z0-9_]*", head) else ""
 
 
 def _parse_anti_patterns(text: str) -> list[SourceEntry]:

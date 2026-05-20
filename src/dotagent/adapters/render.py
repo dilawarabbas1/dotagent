@@ -459,6 +459,8 @@ def _format_entry(e: SourceEntry, *, prefix: str = "") -> str:
         lines.append("- Tables: " + ", ".join(f"`{t}`" for t in e.tables[:6]))
     if e.keys:
         lines.append("- Keys: " + ", ".join(f"`{k}`" for k in e.keys[:6]))
+    if getattr(e, "cross_references", None):
+        lines.append("- Cross-refs: " + ", ".join(f"`{r}`" for r in e.cross_references[:6]))
     if e.body:
         lines.append("")
         lines.append(_one_line(e.body, 600))
