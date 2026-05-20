@@ -8,6 +8,7 @@ from .commands.dream_cmd import dream_group
 from .commands.identity_cmd import identity_set, identity_show
 from .commands.init_cmd import init
 from .commands.migrate_cmd import migrate_cco
+from .commands.schema_migrate_cmd import migrate as schema_migrate
 from .commands.observe_cmd import observe
 from .commands.project_cmd import project_group
 from .commands.reindex_cmd import reindex
@@ -55,6 +56,7 @@ main.add_command(context)
 main.add_command(trailer)
 main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
+main.add_command(schema_migrate, name="migrate")
 main.add_command(restore_original)
 main.add_command(structure)
 main.add_command(update)
