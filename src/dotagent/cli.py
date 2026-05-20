@@ -9,6 +9,7 @@ from .commands.dream_cmd import dream_group
 from .commands.git_cmd import git_group
 from .commands.identity_cmd import identity_set, identity_show
 from .commands.init_cmd import init
+from .commands.manifest_cmd import manifest
 from .commands.migrate_cmd import migrate_cco
 from .commands.schema_migrate_cmd import migrate as schema_migrate
 from .commands.observe_cmd import observe
@@ -56,6 +57,7 @@ main.add_command(status)
 main.add_command(observe)
 main.add_command(reindex)
 main.add_command(context)
+main.add_command(manifest)
 main.add_command(trailer)
 main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
