@@ -6,6 +6,7 @@ from .commands.archive_cmd import archive
 from .commands.context_cmd import context
 from .commands.doctor_cmd import doctor
 from .commands.dream_cmd import dream_group
+from .commands.git_cmd import git_group
 from .commands.identity_cmd import identity_set, identity_show
 from .commands.init_cmd import init
 from .commands.migrate_cmd import migrate_cco
@@ -86,6 +87,9 @@ main.add_command(project_group)
 # Beyond Phase 6: watcher + server
 main.add_command(watch_group)
 main.add_command(serve)
+
+# PR #13: git layout management
+main.add_command(git_group)
 
 
 if __name__ == "__main__":
