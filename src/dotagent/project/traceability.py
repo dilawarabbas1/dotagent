@@ -103,16 +103,34 @@ def audit_feat_to_module(
     brief: Brief, project: Project | None, modules: list[Module],
 ) -> list[Finding]:
     """Every FEAT-NN that the plan covers must have at least one module
-    declaring `implements_features: [FEAT-NN]`."""
+    declaring `implements_features: [FEAT-NN]` — OR equivalent declared
+    in `plan.yaml::features_to_modules`. The audit accepts both sources
+    so the FEAT→module trace works whether the user stores the mapping
+    per-module or project-wide.
+    """
     findings: list[Finding] = []
     if project is None:
         return findings
 
     declared_features = set(project.brief_features_covered)
     implementations: dict[str, list[str]] = {}
+    valid_module_ids = {m.id for m in modules}
+
+    # Source 1: per-module `implements_features: [FEAT-NN]`
     for mod in modules:
         for feat_id in mod.implements_features:
-            implementations.setdefault(feat_id, []).append(mod.id)
+            if mod.id not in implementations.setdefault(feat_id, []):
+                implementations[feat_id].append(mod.id)
+
+    # Source 2: project-wide `features_to_modules: {FEAT-NN: [mid, ...]}`
+    # (Coda-generated / layered-tier plan.yaml shape.) Equally authoritative.
+    for feat_id, module_ids in (project.features_to_modules or {}).items():
+        if not isinstance(module_ids, list):
+            continue
+        for mid in module_ids:
+            mid_str = str(mid)
+            if mid_str and mid_str not in implementations.setdefault(feat_id, []):
+                implementations[feat_id].append(mid_str)
 
     for feat in brief.features:
         if declared_features and feat.id not in declared_features:
@@ -137,6 +155,8 @@ class ContractRef:
     module_id: str
     cycle_n: int
     body: str
+    is_frozen: bool = False    # if True, missing FEAT is info (not fail)
+                                # because frozen contracts are immutable
 
     @property
     def feat_refs(self) -> list[str]:
@@ -162,8 +182,13 @@ def audit_module_to_contract(
         if contract is None:
             continue
         if not contract.feat_refs:
+            # Frozen contracts predate any schema change that added the
+            # business-traceability anchor. They are immutable; demanding
+            # edits to historical artifacts is wrong. Downgrade to info.
+            severity = SEV_INFO if contract.is_frozen else SEV_FAIL
+            code = "frozen-contract-no-feat" if contract.is_frozen else "contract-no-feat"
             findings.append(Finding(
-                severity=SEV_FAIL, code="contract-no-feat",
+                severity=severity, code=code,
                 message=(
                     f"module {mod.id} / cycle {contract.cycle_n}: contract "
                     f"has no FEAT-NN in business-traceability section"
@@ -232,7 +257,12 @@ def _business_section(body: str) -> str:
 # ---------------------------------------------------------------------------
 
 def load_active_contracts(repo: Path, modules: list[Module]) -> list[ContractRef]:
-    """Build ContractRef list from every module's current cycle contract."""
+    """Build ContractRef list from every module's current cycle contract.
+
+    The frozen flag distinguishes immutable historical artifacts from
+    live working contracts so the audit can apply different severity
+    levels to each.
+    """
     out: list[ContractRef] = []
     for mod in modules:
         if not mod.cycles:
@@ -243,9 +273,11 @@ def load_active_contracts(repo: Path, modules: list[Module]) -> list[ContractRef
         contract_path = repo / cycle.contract.path
         if not contract_path.exists():
             continue
+        is_frozen = str(getattr(cycle.contract, "status", "")).lower() == "frozen"
         out.append(ContractRef(
             module_id=mod.id, cycle_n=cycle.n,
             body=contract_path.read_text(),
+            is_frozen=is_frozen,
         ))
     return out
 
