@@ -4,6 +4,98 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0..0.7.0] — 2026-05-20
+
+Implementation of the **layered project architecture** plan
+(see `IMPLEMENTATION_PLAN.md`). 14 PRs across 7 phases. Net **+208 tests**
+(230 → 438 passing).
+
+### Added — Phase 0: Foundation (PRs #1–#2)
+- **Canonical structure schema** (`canonical_structure.py`): data-driven
+  declaration of what each tier (project-root / service-repo / single-repo)
+  must contain. `dotagent structure show / check / version`.
+- **`dotagent migrate`**: schema-version upgrades with 5-mode detection
+  (FRESH, MID_PROJECT, PRE_V0_4, UPGRADE, CURRENT), `--plan` preview, and
+  fully reversible `--rollback` via `.agent/.migration-log.md`.
+- Doctor extended to surface structure deviations + pending archive count
+  + bug-prefix declaration.
+
+### Added — Phase 1: Document lifecycle (PRs #3–#4)
+- **`dotagent archive`**: scan/run/restore/list. Triggers per source:
+  bug-registry entries with `status: fixed` + ≥30 days; anti-patterns with
+  `rescinded: true`; shipped modules ≥90 days. Year-stamped archives at
+  `docs/archive/YYYY/`. Every move logged and reversible.
+- **Tiered bug registry**: `bugs.id_prefix:` in config (e.g. `BE`, `AGT`,
+  `PORTAL`). Cross-references between repos detected automatically and
+  surfaced in CLAUDE.md.
+
+### Added — Phase 2: Brief + traceability (PRs #5–#7)
+- **`project_brief.md`** — durable business intent. Hand-written or AI-drafted
+  on init. Locked template includes Vision, Personas, OBJ-NN, FEAT-NN
+  (with **Serves:** + behavior bullets), RULE-NN, Glossary, Tenancy,
+  Non-goals, Integrations.
+- **`dotagent project brief init / upload / show / edit / check`**.
+- **Traceability**: `Module.implements_features: [FEAT-NN]`, `Project.brief_*`
+  fields, `project/traceability.py` audits OBJ→FEAT→Module→Contract chain.
+- **Contract template** gets `<!-- anchor: business-traceability -->`
+  section; validate refuses without FEAT citation.
+- **Rubric signal S11** — Business traceability (0-3). Total max **30 → 33**.
+  Bands: ready ≥30, polish ≥24, rework ≥18, not_ready ≤17.
+- **CLAUDE.md** renders the structured subset (OBJs, this-repo's FEATs,
+  hard rules, glossary, tenancy, non-goals, integrations) in a "Project
+  context" section.
+
+### Added — Phase 3: Contract discoverability (PR #8)
+- **Per-repo `.agent/project/CONTRACTS.md`** — module-grouped dashboard
+  with markdown links to every cycle. Auto-regenerated on every contract
+  op (`init_contract`, `advance_round`, `freeze_contract`, `add_module`).
+- `dotagent project contracts show / rebuild` with `--format`,
+  `--open`, `--frozen`, `--module` filters.
+
+### Added — Phase 4: Plan negotiation + brief modules table (PRs #9–#10)
+- **Plan negotiation primitives** — pure data layer mirroring contract
+  negotiation. `dotagent project plan write-draft / write-review / show /
+  diff / converged / freeze / log`. `--actor` is opaque (no internal
+  Planner/QA concept); content-hash convergence detection; YAML
+  validated on every write. **No LLM inside dotagent.**
+- **Auto-generated Modules table** inside `project_brief.md` between
+  `<!-- anchor: modules-table-begin/end -->` anchors. Hand-written content
+  outside the anchors preserved. Regenerated on every project event.
+
+### Added — Phase 5: Layered structure (PRs #11–#12)
+- **`parent:` field** in `.agent/config.yaml` — service repos inherit
+  cross-cutting `.agent/*.md` content from a project-root layer. Chain
+  walks up to 3 levels with cycle detection. Brief inherits via the
+  same chain when local is absent. Memory layers stay service-local
+  by design.
+- **Cross-repo rollup**: `Project Root/contracts.md` (lowercase, per
+  convention) aggregates contracts state from every entry in
+  `Project.repos[]`. `dotagent project contracts rollup` and
+  `rebuild --all-repos`.
+
+### Added — Phase 6: Git layout + enforcement (PRs #13–#14)
+- **`.agent/git.yaml`** — declarative meta-repo + service-repo manifest
+  with branch rules per remote.
+- **`dotagent git`** subgroup: `init / rebuild / status / push / pull /
+  clone-services / verify / init-hooks / scaffold-protection`.
+- **Branch reservation enforcement** — pre-push hook (`init-hooks`)
+  refuses code files on the meta branch; GitHub Actions workflow
+  (`scaffold-protection`) enforces server-side. Validation that meta
+  branch is never `main` when `main_branch_policy: locked`.
+- **Critical scope**: enforcement applies ONLY to the meta repo. Service
+  repos' `main` is unrestricted.
+
+### Architectural commitments held
+- dotagent is the **data layer**. No LLM invocation inside; orchestrators
+  (Coda, scripts, humans) drive negotiation loops via `--actor` and
+  `--rationale` flags.
+- `main` locked **only on meta repo** (`strategy: dedicated_repo`,
+  `main_branch_policy: locked`). Service repos unchanged.
+- Single-repo dotagent users **unaffected** — every PR additive,
+  backward-compatible.
+- All 230 pre-existing tests still pass (the only updates: rubric signal
+  count + band thresholds for the S11 addition).
+
 ## [0.3.0] — 2026-05-16
 
 Two governance features shipped in response to LinkedIn feedback from

@@ -236,6 +236,86 @@ for the full workflow.
 
 ---
 
+## Layered project architecture (v0.4+)
+
+For multi-service projects (frontend + backend + admin), dotagent introduces
+a **project-root layer** that holds cross-cutting business intent + hard rules
++ shared docs, with each service repo inheriting via a `parent:` field in its
+`.agent/config.yaml`.
+
+```
+Project Root/                              ← own git repo (e.g. aigent-meta)
+├── .agent/
+│   ├── project_brief.md                   ← business OBJs + FEATs + RULEs
+│   ├── git.yaml                           ← repo manifest + branch rules
+│   └── project/
+│       ├── plan.yaml                      ← FEAT → Module mapping
+│       └── CONTRACTS.md                   ← Tier-2 contracts dashboard
+├── docs/                                  ← cross-cutting source docs
+├── contracts.md                           ← Tier-1 cross-repo rollup
+│
+├── backend/                               ← service repo (own git remote)
+│   └── .agent/config.yaml                 ←   parent: ../..
+├── customer-portal/                       ← (same)
+└── admin-portal/                          ← (same)
+```
+
+### Commands you'll use most
+
+```bash
+# Schema management
+dotagent structure show                    # canonical layout for this tier
+dotagent structure check                   # audit current repo vs schema
+dotagent migrate [--plan] [--rollback]     # upgrade .agent/ schema; reversible
+
+# Project brief — durable business intent
+dotagent project brief init                # interactive Q&A → project_brief.md
+dotagent project brief check               # OBJ → FEAT → Module → Contract audit
+
+# Contract dashboards
+dotagent project contracts show            # this repo's CONTRACTS.md
+dotagent project contracts rollup          # cross-repo rollup at Project Root
+dotagent project contracts rebuild         # regenerate (also called automatically)
+
+# Plan negotiation (pure data layer — orchestrators drive)
+dotagent project plan write-draft  --actor planner --from-stdin
+dotagent project plan write-review --actor qa --rationale "..." --from-stdin
+dotagent project plan converged            # exit 0 / 1
+dotagent project plan freeze               # → plan.yaml + plan.frozen.yaml
+
+# Document lifecycle
+dotagent archive scan                      # what's eligible to archive
+dotagent archive run                       # move fixed bugs + rescinded patterns + shipped modules
+dotagent archive restore <id>              # un-archive
+
+# Git layout (Project Root only)
+dotagent git init --remote git@…           # scaffold .agent/git.yaml
+dotagent git rebuild                       # regenerate .agent/git.md
+dotagent git status / push / pull          # meta sync
+dotagent git clone-services                # clone every repos[] entry
+dotagent git init-hooks                    # pre-push hook against branch rules
+dotagent git scaffold-protection           # GitHub Actions workflow
+dotagent git verify --branch <name>        # check pending changes vs rules
+```
+
+### Traceability chain
+
+Every contract cites the brief IDs it serves; `dotagent project brief check`
+audits the full chain:
+
+```
+OBJ-01 ──► FEAT-02 ──► M02-password-reset ──► cycles/01/contract.md
+                                              <!-- anchor: business-traceability -->
+                                              **Feature(s):** FEAT-02
+                                              **Objective(s):** OBJ-01, OBJ-02
+```
+
+The contract-scoring rubric includes **S11 — Business traceability** (0-3),
+making the total max **33**. Bands: ready ≥30 · polish ≥24 · rework ≥18 ·
+not_ready ≤17.
+
+---
+
 ## How dotagent compares
 
 |                                   | Claude `CLAUDE.md` | Cursor Rules | Copilot custom instr. | dotagent |
@@ -340,12 +420,12 @@ Common failure modes and fixes are in
 
 ## Status
 
-**v0.3.0** — launch-ready with project management, conflict detection, and
-rule lifecycle. 137 tests passing across all phases. Live-tested end-to-end
-(interactive Q&A, real git diff, full dev↔QA cycle, multi-module dep
-resolution, backup/restore, server over HTTP). Not yet on PyPI (install via
-git URL works); not yet on the VS Code Marketplace (build the `.vsix` from
-`extensions/vscode-copilot/`). Both are convenience-only and don't block use.
+**v0.4.0+** — launch-ready with the full **layered project architecture**:
+canonical structure schema, in-place schema migration, document lifecycle,
+tiered bug registry, durable business-intent capture (`project_brief.md`),
+end-to-end traceability (OBJ → FEAT → Module → Contract), per-repo
+contracts dashboards, plan-negotiation primitives, cross-repo rollups, and
+git-layout enforcement. **438 tests passing.**
 
 See [`CHANGELOG.md`](CHANGELOG.md) for full release notes.
 
