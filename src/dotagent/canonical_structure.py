@@ -391,9 +391,10 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry("../.agent/patterns.md", required=False, kind=KIND_FILE,
                 category=CAT_STYLE,
                 when_to_read="INHERITED · project-wide patterns."),
-    SchemaEntry("../.agent/git.yaml", required=False, kind=KIND_FILE,
-                category=CAT_CONFIG,
-                when_to_read="INHERITED · git topology + branch rules (source of truth for git.md)."),
+    # NOTE: We intentionally do NOT surface `../.agent/git.yaml` here.
+    # git.yaml is project-root-scoped configuration (the source of truth
+    # for the meta repo's branch rules). Service-repo devs read the
+    # rendered dashboard `../.agent/git.md`; they never edit the YAML.
     SchemaEntry("../.agent/project/plan.yaml", required=False, kind=KIND_FILE,
                 category=CAT_PROJECT_PLAN,
                 when_to_read="INHERITED · PROJECT-WIDE plan: features_to_modules, repos manifest, FEAT-OBJ links."),

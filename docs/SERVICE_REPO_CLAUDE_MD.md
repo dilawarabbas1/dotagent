@@ -152,7 +152,6 @@ AI can visually distinguish parent context from local context:
 ../.agent/architecture.md             INHERITED · whole-project technical architecture
 ../.agent/style.md                    INHERITED · project-wide style baseline. Service overrides where disagreeing.
 ../.agent/patterns.md                 INHERITED · project-wide patterns
-../.agent/git.yaml                    INHERITED · git topology + branch rules
 ../.agent/project/plan.yaml           INHERITED · PROJECT-WIDE plan: features_to_modules, repos manifest
 ../.agent/project/SCOPE.md            INHERITED · human-readable project blueprint
 ../.agent/project/CONTRACTS.md        INHERITED · project-root contracts dashboard (cross-service modules)
@@ -341,6 +340,55 @@ If any of these break, CI blocks merge.
    for v0.5.1.
 
 ---
+
+## Why `git.yaml` is project-root only
+
+`.agent/git.yaml` is the **source of truth** for the meta repo's branch
+rules and cross-repo topology. It defines: which subdirectory maps to
+which repo, which branch each repo allows pushes to, and what the
+"meta" / generated-content branch is called.
+
+That config is a **project-root concern** — the team configures it once,
+in the meta repo, and never edits it again. Service-repo developers
+don't touch the YAML; they read the rendered dashboard `git.md` (which
+explains "push to `claude/...`, never to `main`, run X before Y").
+
+So the service-repo manifest surfaces `../.agent/git.md` (the
+human-readable dashboard, in MUST_READ) but **not** `../.agent/git.yaml`
+(the source config). This avoids tempting service-repo devs to edit
+configuration that belongs upstream.
+
+## Auto-regeneration when docs change
+
+CLAUDE.md is a navigation manifest derived from `docs/` and `.agent/`.
+If you edit `docs/bug-registry.md` but forget to run `dotagent sync`,
+the next session reads a stale CLAUDE.md.
+
+As of v0.4.9, the pre-commit hook (`dotagent observe pre-commit`) auto-
+regenerates the adapter files (CLAUDE.md, .cursorrules,
+copilot-instructions.md, AGENTS.md) whenever a staged file matches
+`docs/*.md`. The behavior:
+
+1. Hook fires on commit, sees a `docs/` change.
+2. Reindexes the source so cross-references are up to date.
+3. Re-renders every enabled adapter.
+4. The newly-written CLAUDE.md is NOT auto-staged — you decide whether
+   to include it in the same commit or a follow-up.
+
+Disable via `.agent/config.yaml`:
+
+```yaml
+hooks:
+  auto_regen_on_docs: false   # default: true
+```
+
+You may want to disable it when:
+- you have very large docs/ and the regen is slow,
+- you prefer a separate "sync" commit per PR,
+- you're running an alternate pipeline (CI-based regen).
+
+Failures are logged (`.agent/log/`) but never block the commit — the
+hook degrades gracefully.
 
 ## Related docs
 

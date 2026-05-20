@@ -77,7 +77,9 @@ _INHERITED_PATHS = (
     "../.agent/architecture.md",
     "../.agent/style.md",
     "../.agent/patterns.md",
-    "../.agent/git.yaml",
+    # NOTE: ../.agent/git.yaml is intentionally NOT in the service-repo
+    # schema — git.yaml is project-root scope. Service-repo devs read
+    # the rendered dashboard `../.agent/git.md` instead.
     "../.agent/project/plan.yaml",
     "../.agent/project/SCOPE.md",
     "../.agent/project/CONTRACTS.md",
@@ -148,6 +150,30 @@ def test_service_registry_present(tmp_path: Path):
     paths = _fixture_paths(tmp_path)
     rendered = render_manifest(paths, tier=TIER_SERVICE_REPO)
     assert "../docs/service-registry.md" in rendered
+
+
+def test_git_yaml_is_project_root_only_not_service_repo(tmp_path: Path):
+    """`git.yaml` is the source of truth for branch rules and lives only
+    at the project-root layer. Service-repos should NEVER surface it in
+    their manifest — they read the rendered `git.md` dashboard instead.
+
+    Regression: an earlier draft included `../.agent/git.yaml` as an
+    INHERITED CAT_CONFIG entry. That's wrong: service-repo devs never
+    edit YAML, only read the dashboard.
+    """
+    paths = _fixture_paths(tmp_path)
+    rendered = render_manifest(paths, tier=TIER_SERVICE_REPO)
+    schema_paths = {e.path for e in schema_for(TIER_SERVICE_REPO)}
+
+    assert "../.agent/git.yaml" not in schema_paths, (
+        "service-repo schema must not declare ../.agent/git.yaml — that's "
+        "project-root scope. Use ../.agent/git.md (the dashboard) instead."
+    )
+    assert "../.agent/git.yaml" not in rendered, (
+        "service-repo manifest leaked git.yaml — should be only the dashboard."
+    )
+    # And confirm the dashboard IS there:
+    assert "../.agent/git.md" in rendered
 
 
 def test_local_and_inherited_both_present_together(tmp_path: Path):
