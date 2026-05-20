@@ -57,6 +57,13 @@ def observe(kind, tool, summary, files, sha, session) -> None:
                 cfg.raw.get("sources") or {},
                 embed_full_docs=bool((cfg.raw.get("context") or {}).get("embed_full_docs")),
             )
+            # Auto-regenerate adapter files (CLAUDE.md, .cursorrules,
+            # copilot-instructions.md, AGENTS.md) so the AI-facing
+            # navigation manifest stays in sync with docs/.
+            # Skipped if `auto_regen` is explicitly disabled in config.
+            auto_regen = (cfg.raw.get("hooks") or {}).get("auto_regen_on_docs", True)
+            if auto_regen:
+                _regen_adapters(paths, cfg, identity.id)
         except Exception as e:
             log_exception("docs reindex on observe failed", e)
 
@@ -102,3 +109,26 @@ def _parse_files(s: str) -> list[str]:
 
 def _touches_docs(files: list[str]) -> bool:
     return any(f.startswith("docs/") and f.endswith(".md") for f in files)
+
+
+def _regen_adapters(paths: Paths, cfg, actor_id: str) -> None:
+    """Re-render every enabled adapter (CLAUDE.md, .cursorrules,
+    copilot-instructions.md, AGENTS.md) so the navigation manifest
+    reflects the latest docs/ state. Called from the pre-commit hook
+    when docs/*.md files are staged.
+
+    Failures are logged, not raised — the commit must still succeed.
+    """
+    from ..adapters import REGISTRY as ADAPTER_REGISTRY
+    from ..adapters import get as get_adapter
+    from ..context import build as build_context
+
+    ctx = build_context(paths, actor=actor_id, config=cfg)
+    for name in cfg.adapters_enabled:
+        if name not in ADAPTER_REGISTRY:
+            continue
+        adapter = get_adapter(name)(paths)
+        try:
+            adapter.write(adapter.render(ctx))
+        except OSError as e:
+            log_exception(f"adapter regen write failed: {name}", e)

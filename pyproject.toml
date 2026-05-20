@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dotagent"
-version = "0.4.8"
+version = "0.4.9"
 description = "Tool-agnostic AI coding assistant context manager. One source of truth, every tool in sync."
 authors = [{ name = "dotagent contributors" }]
 readme = "README.md"
