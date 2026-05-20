@@ -15,6 +15,7 @@ from .commands.restore_cmd import restore_original
 from .commands.serve_cmd import serve
 from .commands.skill_cmd import skill_group
 from .commands.status_cmd import status
+from .commands.structure_cmd import structure
 from .commands.sync_cmd import sync
 from .commands.tool_cmd import tool_group
 from .commands.trailer_cmd import trailer
@@ -55,6 +56,7 @@ main.add_command(trailer)
 main.add_command(doctor)
 main.add_command(migrate_cco, name="migrate-cco")
 main.add_command(restore_original)
+main.add_command(structure)
 main.add_command(update)
 
 # Phase 2: visibility
