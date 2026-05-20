@@ -302,5 +302,7 @@ def cmd_next() -> None:
 # subgroup lives alongside the existing project verbs without touching cli.py.
 from .contract_cmd import contract_group as _contract_group  # noqa: E402
 from .brief_cmd import brief_group as _brief_group  # noqa: E402
+from .contracts_index_cmd import contracts_group as _contracts_group  # noqa: E402
 project_group.add_command(_contract_group)
 project_group.add_command(_brief_group)
+project_group.add_command(_contracts_group)

@@ -383,6 +383,7 @@ def init_contract(paths: Paths, module: Module) -> Contract:
         last_actor=ACTOR_DEV,
     )
     cycle.contract = contract
+    _regenerate_contracts_index(paths)
     return contract
 
 
@@ -538,6 +539,7 @@ def advance_round(
         body = body.rstrip() + "\n" + log_line
         path.write_text(body)
 
+    _regenerate_contracts_index(paths)
     return cycle.contract
 
 
@@ -698,4 +700,23 @@ def freeze_contract(
         snapshot.chmod(0o444)  # read-only for everyone
     except OSError:
         pass  # best-effort; permission may be denied on some filesystems
+    _regenerate_contracts_index(paths)
     return snapshot
+
+
+def _regenerate_contracts_index(paths: Paths) -> None:
+    """Best-effort regeneration of .agent/project/CONTRACTS.md.
+
+    Called from init_contract / advance_round / freeze_contract. Silent
+    on failure — the contract op itself is the user's primary concern.
+    """
+    try:
+        from .contracts_index import regenerate as _regen
+        from .model import load_project
+        project = load_project(paths)
+        if project is None:
+            return
+        _regen(paths, project)
+    except Exception as exc:  # noqa: BLE001
+        from ..logging import log_exception
+        log_exception("contracts_index regenerate failed", exc)
