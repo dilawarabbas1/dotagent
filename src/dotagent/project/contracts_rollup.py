@@ -81,7 +81,10 @@ def build_rollup(paths: Paths) -> Rollup:
 
     repos_manifest = project.repos or []
     for entry in repos_manifest:
-        repo_id = str(entry.get("id") or "")
+        # `id` is the canonical key, but tolerate `alias` (Coda-generated
+        # plan.yaml files have used this) and `name` as fallbacks so a
+        # mistyped manifest doesn't silently produce an empty rollup.
+        repo_id = str(entry.get("id") or entry.get("alias") or entry.get("name") or "")
         repo_path = str(entry.get("path") or "")
         role = str(entry.get("role") or "")
         if not repo_id or not repo_path:

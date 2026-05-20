@@ -321,7 +321,9 @@ class Project:
     modules: dict[str, Module] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        # NOTE: modules are persisted separately; plan.yaml carries only the ordered id list.
+        # Per-cycle module state still persists in `.agent/project/modules/<id>/module.yaml`
+        # (see `save_project`). We additionally emit `modules:` inline so layered-tier
+        # plan.yaml files round-trip without losing the user's preferred shape.
         return {
             "name": self.name, "goal": self.goal,
             "description": self.description,
@@ -331,6 +333,7 @@ class Project:
             "constraints": self.constraints,
             "created_at": self.created_at, "updated_at": self.updated_at,
             "module_ids": self.module_ids,
+            "modules": {mid: mod.to_dict() for mid, mod in self.modules.items()},
             "tools": self.tools,
             "brief": self.brief,
             "brief_version": self.brief_version,
@@ -342,7 +345,22 @@ class Project:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
-        return cls(
+        # Inline modules: dict (the layered-tier shape) carries module records
+        # directly in plan.yaml. We translate that into module_ids + populated
+        # `modules` so the rest of the code sees the same view either way.
+        inline_modules, inline_ids = _parse_inline_modules(d.get("modules"))
+        # Be tolerant: derive module_ids from inline modules if the field is
+        # absent, but if both are present use the union (preserves explicit
+        # ordering from module_ids while including any inline-only entries).
+        declared_ids = list(d.get("module_ids") or [])
+        effective_ids: list[str] = []
+        seen: set[str] = set()
+        for mid in declared_ids + inline_ids:
+            if mid and mid not in seen:
+                effective_ids.append(mid)
+                seen.add(mid)
+
+        project = cls(
             # Tolerate plan.yaml files without an explicit `name:` (the new
             # layered-tier shape sometimes omits it because the manifest
             # has its own per-repo names). Empty string is fine — callers
@@ -355,7 +373,7 @@ class Project:
             stakeholders=list(d.get("stakeholders") or []),
             constraints=list(d.get("constraints") or []),
             created_at=d.get("created_at", ""), updated_at=d.get("updated_at", ""),
-            module_ids=list(d.get("module_ids") or []),
+            module_ids=effective_ids,
             tools=d.get("tools") or {},
             brief=d.get("brief", ""),
             brief_version=int(d.get("brief_version") or 0),
@@ -364,6 +382,96 @@ class Project:
             features_to_modules=dict(d.get("features_to_modules") or {}),
             repos=[dict(r) for r in (d.get("repos") or [])],
         )
+        # Populate the transient `modules` dict from inline records so the
+        # contracts dashboards + traceability see them without needing
+        # per-file module.yaml files.
+        for mid, mod in inline_modules.items():
+            project.modules[mid] = mod
+        return project
+
+
+def _parse_inline_modules(
+    raw,
+) -> tuple[dict[str, "Module"], list[str]]:
+    """Translate plan.yaml's inline `modules:` into Module objects.
+
+    Accepts two shapes:
+
+    1. **Dict-of-dicts** (PR #6 layered-tier shape):
+       ```yaml
+       modules:
+         M01: { state: planned, implements_features: [FEAT-01], ...}
+         M02: { state: in_progress, ... }
+       ```
+
+    2. **List-of-dicts** (each entry carries an `id:` key):
+       ```yaml
+       modules:
+         - id: M01
+           state: planned
+       ```
+
+    Returns (`{id: Module}`, ordered_ids). Empty when `raw` is missing
+    or not one of the two recognized shapes.
+
+    Inline records may carry fields outside the Module dataclass (e.g.
+    `repo`, `owner`, `deps`, `integrations`). Those go into `module.tools`
+    so callers can read them without losing data, but they aren't first-
+    class fields. If a record looks like a "thin" inline module (no
+    explicit `state`, no `plan` block), it gets sensible defaults instead
+    of raising.
+    """
+    if not raw:
+        return {}, []
+
+    items: list[tuple[str, dict]] = []
+    if isinstance(raw, dict):
+        items = [(str(k), v if isinstance(v, dict) else {}) for k, v in raw.items()]
+    elif isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            mid = str(entry.get("id") or "")
+            if not mid:
+                continue
+            items.append((mid, entry))
+    else:
+        return {}, []
+
+    out: dict[str, Module] = {}
+    ordered_ids: list[str] = []
+    for mid, raw_record in items:
+        record = dict(raw_record or {})
+        # Hoist non-Module fields into tools so they survive round-trip.
+        known_fields = {
+            "id", "name", "state", "created_at", "updated_at", "plan",
+            "cycles", "blocked_reason", "pre_block_state", "tools",
+            "implements_features", "cross_module",
+        }
+        extras = {k: v for k, v in record.items() if k not in known_fields}
+
+        tools_block = dict(record.get("tools") or {})
+        if extras:
+            tools_block.setdefault("_inline", {}).update(extras)
+
+        mod_dict = {
+            "id": record.get("id") or mid,
+            "name": record.get("name") or mid,
+            "state": record.get("state") or ModuleState.PLANNED,
+            "created_at": record.get("created_at") or "",
+            "updated_at": record.get("updated_at") or "",
+            "plan": record.get("plan") or {},
+            "cycles": record.get("cycles") or [],
+            "blocked_reason": record.get("blocked_reason") or "",
+            "pre_block_state": record.get("pre_block_state") or "",
+            "tools": tools_block,
+            "implements_features": list(record.get("implements_features") or []),
+            "cross_module": record.get("cross_module") or "",
+        }
+        out[mid] = Module.from_dict(mod_dict)
+        ordered_ids.append(mid)
+
+    return out, ordered_ids
 
 
 # ---- Persistence ------------------------------------------------------------
