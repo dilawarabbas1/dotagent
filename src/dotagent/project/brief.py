@@ -602,30 +602,102 @@ def write_stub(brief_path: Path, *, name: str = "", owner: str = "",
 _MODULES_BEGIN = "<!-- anchor: modules-table-begin -->"
 _MODULES_END = "<!-- anchor: modules-table-end -->"
 
+# Recognized H2 headings for the modules section. We try anchors FIRST,
+# then fall back to detecting the heading by text — so a hand-written
+# `## Modules & delivery status` block (without anchors) gets REPLACED,
+# not duplicated by a fresh anchored append.
+_MODULES_HEADING_PATTERNS = (
+    "## Modules & delivery status",
+    "## Modules and delivery status",
+    "## Modules & Delivery Status",
+    "## Modules",
+)
+
 
 def replace_modules_section(text: str, new_section_body: str) -> str:
-    """Replace content between the modules anchors. Preserves anchors.
+    """Replace the modules section, preserving everything outside it.
 
-    Hand-written content outside the anchors is untouched.
+    Idempotent + dedup-safe. Uses a sentinel-based strategy:
+
+    1. Walk the text once. For every modules block found (anchored or
+       unanchored), replace it with a single sentinel marker on first
+       occurrence; delete subsequent occurrences entirely.
+    2. After scanning, replace the sentinel with the fresh anchored
+       block. If no sentinel was placed (no prior section), append.
+
+    The sentinel approach avoids the position-drift bug where
+    `insertion_pos` from the original text becomes invalid in the
+    edited text after strips.
     """
-    begin_idx = text.find(_MODULES_BEGIN)
-    end_idx = text.find(_MODULES_END)
-    if begin_idx < 0 or end_idx < 0 or end_idx < begin_idx:
-        # Anchors missing — append the anchored block at the end.
-        return (
-            text.rstrip()
-            + "\n\n" + _MODULES_BEGIN + "\n" + new_section_body.rstrip()
-            + "\n" + _MODULES_END + "\n"
+    import re as _re
+
+    SENTINEL = "\x00DOTAGENT_MODULES_INSERT\x00"
+    wrapped = (
+        _MODULES_BEGIN + "\n"
+        + new_section_body.rstrip() + "\n"
+        + _MODULES_END + "\n"
+    )
+
+    cleaned = text
+    sentinel_placed = False
+
+    # 1a. Replace the first anchored block with the sentinel (if any).
+    begin_idx = cleaned.find(_MODULES_BEGIN)
+    end_idx = (
+        cleaned.find(_MODULES_END, begin_idx + len(_MODULES_BEGIN))
+        if begin_idx >= 0 else -1
+    )
+    if begin_idx >= 0 and end_idx > begin_idx:
+        cleaned = (
+            cleaned[:begin_idx] + SENTINEL
+            + cleaned[end_idx + len(_MODULES_END):]
         )
-    before = text[:begin_idx + len(_MODULES_BEGIN)]
-    after = text[end_idx:]
-    return before + "\n" + new_section_body.rstrip() + "\n" + after
+        sentinel_placed = True
+
+    # 1b. Replace each unanchored `## Modules ...` heading block.
+    # First occurrence becomes sentinel (if not already placed); rest
+    # are deleted.
+    while True:
+        m = None
+        for heading_pattern in _MODULES_HEADING_PATTERNS:
+            pat = _re.compile(
+                r"^" + _re.escape(heading_pattern) + r"\s*$",
+                _re.MULTILINE | _re.IGNORECASE,
+            )
+            found = pat.search(cleaned)
+            if found:
+                m = found
+                break
+        if m is None:
+            break
+
+        head_start = m.start()
+        next_h2 = _re.search(r"^##\s+", cleaned[m.end():], _re.MULTILINE)
+        body_end = (m.end() + next_h2.start()) if next_h2 else len(cleaned)
+        replacement = "" if sentinel_placed else SENTINEL
+        sentinel_placed = sentinel_placed or bool(replacement)
+        cleaned = cleaned[:head_start] + replacement + cleaned[body_end:]
+
+    # 2. Materialize the sentinel into the wrapped block.
+    if SENTINEL in cleaned:
+        # Normalize surrounding whitespace so we don't accumulate blank lines
+        cleaned = _re.sub(r"\n*" + _re.escape(SENTINEL) + r"\n*", "\n\n" + wrapped, cleaned)
+        return cleaned
+
+    # No prior section anywhere — append at end.
+    return cleaned.rstrip() + "\n\n" + wrapped
 
 
 def render_modules_table(project) -> str:
     """Render the auto-generated modules table from a Project object.
 
     Section content only (no anchors). Used by `regenerate_brief_modules()`.
+
+    For each module, Implements reads from BOTH sources so the table
+    populates regardless of which schema the user keeps the mapping in:
+
+      - module.implements_features (per-module field)
+      - plan.yaml::features_to_modules (project-level inverse map)
     """
     from datetime import datetime, timezone
     now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -641,13 +713,37 @@ def render_modules_table(project) -> str:
         lines.append("_No modules defined yet. Run `dotagent project add-module`._")
         return "\n".join(lines)
 
+    # Build a module_id → implements_features map by unioning the two sources.
+    feats_by_module: dict[str, list[str]] = {}
+    for mod in modules:
+        feats_by_module.setdefault(mod.id, []).extend(
+            getattr(mod, "implements_features", []) or []
+        )
+    for feat_id, module_ids in (
+        getattr(project, "features_to_modules", None) or {}
+    ).items():
+        if not isinstance(module_ids, list):
+            continue
+        for mid in module_ids:
+            mid_str = str(mid)
+            if mid_str and feat_id not in feats_by_module.setdefault(mid_str, []):
+                feats_by_module[mid_str].append(feat_id)
+
     lines.append("| Module | Implements | State | Owner | Deps | Cross-module |")
     lines.append("|---|---|---|---|---|---|")
     for m in modules:
-        feats = ", ".join(getattr(m, "implements_features", []) or []) or "—"
+        feats_list = feats_by_module.get(m.id, [])
+        feats = ", ".join(feats_list) if feats_list else "—"
         deps = ", ".join((getattr(m, "plan", None) and m.plan.dependencies) or []) or "—"
         cross = getattr(m, "cross_module", "") or "—"
-        owner = "—"  # owner field not yet on Module; PR #11+ may add
+        # Owner comes from the inline extras (PR #29: stashed into
+        # module.tools["_inline"]) or top-level if the user added one.
+        inline = (getattr(m, "tools", {}) or {}).get("_inline") or {}
+        owner = (
+            inline.get("owner")
+            or (getattr(m, "tools", {}) or {}).get("owner")
+            or "—"
+        )
         lines.append(
             f"| **{m.id}** | {feats} | {m.state} | {owner} | {deps} | {cross} |"
         )

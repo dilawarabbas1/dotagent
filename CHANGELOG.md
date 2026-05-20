@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-05-20
+
+### Fixed
+- **`replace_modules_section()` no longer duplicates the section** when
+  a hand-written `## Modules & delivery status` heading exists without
+  anchors. Now uses a sentinel-based strategy: strips every existing
+  modules block (anchored OR plain-heading), replaces with a single
+  fresh anchored block at the first removal site. Idempotent on
+  repeated calls.
+- **`render_modules_table()` Implements column now unions both sources**
+  — reads from `module.implements_features` AND
+  `plan.yaml::features_to_modules`. The audit's "Implements column
+  empty" report is fixed.
+- **`render_modules_table()` Owner column reads from
+  `module.tools["_inline"]["owner"]`** (the layered-tier preservation
+  stash from PR #29). Was always rendering `—` regardless of data.
+- **`render_scope()` Description distinguished from Goal.** Previously
+  both fell back to `brief.vision`, producing identical text. Now
+  Description falls back to first 5 brief OBJs, then features, then
+  vision as last resort. Goal stays as the one-line vision.
+- **`dotagent project status` falls back to `brief.name`** when
+  `plan.yaml::name` is empty. Defensive; only fires on absence.
+- Tests: +12 in `test_regen_bug_fixes.py` covering all four failure
+  modes from the user audit follow-up.
+
 ## [0.4.5] — 2026-05-20
 
 ### Added

@@ -529,6 +529,9 @@ what's new (everything is additive — old commands still work):
 | **FEAT-NN reported as unmapped despite `features_to_modules` in plan.yaml** | Pre-0.4.5 audit ignored that source | `dotagent update` (0.4.5+ unions both sources) |
 | **Frozen contracts flagged as failing for missing FEAT-NN** | Pre-0.4.5 treated all contracts the same | `dotagent update` (0.4.5+ downgrades frozen to info — historical immutable artifacts) |
 | **No command to refresh `SCOPE.md` without changing state** | Regenerator was only called by state-change ops | `dotagent project regenerate` (added in 0.4.5; supports `--dry-run`) |
+| **Duplicate `## Modules & delivery status` section in brief after regenerate** | Pre-0.4.6 `replace_modules_section()` couldn't handle a pre-existing hand-written heading without anchors — appended a duplicate | `dotagent update` (0.4.6+ uses sentinel-based replacement; strips any prior section before inserting) |
+| **Modules table Implements column shows `—` everywhere** | Pre-0.4.6 read only `module.implements_features`; ignored `plan.yaml::features_to_modules` | `dotagent update` (0.4.6+ unions both sources) |
+| **SCOPE.md Goal and Description identical** | Pre-0.4.6 both fields fell back to `brief.vision` | `dotagent update` (0.4.6+ Description falls back to OBJ list / features / vision in that order) |
 | **Dashboard titles render `Contracts in \`\``** (empty backticks) | plan.yaml missing top-level `name:` | Add `name: <project>` to top of plan.yaml (round-trip through `yaml.safe_dump`) |
 | **plan.yaml lost top-level fields after rewrite** (no `name`, `goal`, `success_criteria`) | A rewrite (brief-wiring, init, hand-edit) dropped them | Restore them from `plan.frozen.yaml` if available, else hand-add |
 | **rollup shows "no plan.yaml in repo" as error** (0.4.2 and earlier) | Old wording treated valid topology as failure | `dotagent update` (0.4.3+ shows it as info, not error) |
