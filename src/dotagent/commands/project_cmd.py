@@ -358,6 +358,52 @@ def cmd_regenerate(dry_run: bool) -> None:
     except Exception as exc:  # noqa: BLE001
         click.echo(f"  ! brief modules-table regen failed: {exc}", err=True)
 
+    # service-registry.md (project-root tier only — driven by git.yaml)
+    try:
+        from ..git_layout import load as _load_git
+        from ..render.service_registry import render_service_registry
+        git_yaml = paths.agent / "git.yaml"
+        if git_yaml.exists():
+            layout = _load_git(git_yaml)
+            target = paths.repo / "docs" / "service-registry.md"
+            if dry_run:
+                written.append("docs/service-registry.md  (preview)")
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                write_text(target, render_service_registry(layout))
+                written.append("docs/service-registry.md")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! service-registry.md regen failed: {exc}", err=True)
+
+    # Per-module HISTORY.md
+    try:
+        from ..render.module_history import render_module_history
+        for module in project.modules.values():
+            module_dir = paths.agent / "project" / "modules" / module.id
+            target = module_dir / "HISTORY.md"
+            if dry_run:
+                written.append(
+                    f".agent/project/modules/{module.id}/HISTORY.md  (preview)"
+                )
+            else:
+                module_dir.mkdir(parents=True, exist_ok=True)
+                write_text(target, render_module_history(module))
+                written.append(f".agent/project/modules/{module.id}/HISTORY.md")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! module HISTORY.md regen failed: {exc}", err=True)
+
+    # .agent/dashboard.md
+    try:
+        from ..render.dashboard import render_dashboard
+        target = paths.agent / "dashboard.md"
+        if dry_run:
+            written.append(".agent/dashboard.md  (preview)")
+        else:
+            write_text(target, render_dashboard(project, paths))
+            written.append(".agent/dashboard.md")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! dashboard.md regen failed: {exc}", err=True)
+
     label = "would write" if dry_run else "wrote"
     click.echo(f"✓ {label} {len(written)} file(s):")
     for w in written:

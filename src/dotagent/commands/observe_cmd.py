@@ -122,6 +122,7 @@ def _regen_adapters(paths: Paths, cfg, actor_id: str) -> None:
     from ..adapters import REGISTRY as ADAPTER_REGISTRY
     from ..adapters import get as get_adapter
     from ..context import build as build_context
+    from ..render.derived import regenerate_derived_files
 
     ctx = build_context(paths, actor=actor_id, config=cfg)
     for name in cfg.adapters_enabled:
@@ -132,3 +133,9 @@ def _regen_adapters(paths: Paths, cfg, actor_id: str) -> None:
             adapter.write(adapter.render(ctx))
         except OSError as e:
             log_exception(f"adapter regen write failed: {name}", e)
+    # Refresh derived files too (service-registry, HISTORY.md, dashboard)
+    # so they stay in sync with the docs/* the user just edited.
+    try:
+        regenerate_derived_files(paths)
+    except Exception as e:  # noqa: BLE001
+        log_exception("derived-files regen on observe failed", e)

@@ -69,6 +69,16 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool) -> None:
 
     click.echo(f"✓ rendered {rendered} adapters")
 
+    # Project-tier derived files (service-registry, per-module HISTORY,
+    # dashboard). Silently no-ops when project state isn't present.
+    try:
+        from ..render.derived import regenerate_derived_files
+        derived = regenerate_derived_files(paths)
+        if derived:
+            click.echo(f"✓ regenerated {len(derived)} derived file(s)")
+    except Exception as exc:  # noqa: BLE001
+        click.echo(f"  ! derived-files regen failed: {exc}", err=True)
+
     if not no_hooks:
         install_git_hooks(paths)
         if cfg.get("adapters", "claude"):

@@ -86,6 +86,7 @@ _INHERITED_PATHS = (
     "../.agent/project/modules",
     "../contracts.md",
     "../docs/service-registry.md",
+    "../.agent/dashboard.md",
     "../docs/shared-contracts.md",
     "../docs/dependency-map.md",
     "../docs/architecture.md",

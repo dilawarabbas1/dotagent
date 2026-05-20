@@ -205,6 +205,18 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
                 description="Cross-service modules at this tier.",
                 category=CAT_CONTRACTS,
                 when_to_read="Per-module dirs: module.yaml, PLAN.md, cycles/<NN>/{contract,dev-handoff,qa-findings}.md."),
+    SchemaEntry(".agent/project/modules/<id>/HISTORY.md", required=False, kind=KIND_GENERATED,
+                category=CAT_CONTRACTS,
+                when_to_read=(
+                    "GENERATED · per-module cycle log (status + QA outcome + sha per cycle). "
+                    "Built from cycle artifacts; do not hand-edit."
+                )),
+    SchemaEntry(".agent/dashboard.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read=(
+                    "GENERATED · project health snapshot: open contracts, pending QA, "
+                    "stalled cycles, doc staleness, recent activity. Refreshed on `dotagent sync`."
+                )),
 
     # Source docs (cross-cutting; Claude maintains these — never dotagent)
     SchemaEntry("docs", required=False, kind=KIND_DIR,
@@ -228,9 +240,12 @@ _PROJECT_ROOT_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry("docs/architecture.md", required=False, kind=KIND_FILE,
                 category=CAT_ARCHITECTURE,
                 when_to_read="Long-form system architecture. YOU update when system shape changes."),
-    SchemaEntry("docs/service-registry.md", required=False, kind=KIND_FILE,
+    SchemaEntry("docs/service-registry.md", required=False, kind=KIND_GENERATED,
                 category=CAT_ARCHITECTURE,
-                when_to_read="Per-service description (project-root only). Mostly stable."),
+                when_to_read=(
+                    "GENERATED · per-service table (id, path, branch, role) derived "
+                    "from .agent/git.yaml. Edit the YAML to update; this regenerates."
+                )),
     SchemaEntry("docs/shared-contracts.md", required=False, kind=KIND_FILE,
                 category=CAT_ARCHITECTURE,
                 when_to_read="API + event schemas BETWEEN services. YOU update on cross-service contract changes."),
@@ -337,6 +352,18 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry(".agent/project/modules/<id>/completion.md", required=False, kind=KIND_FILE,
                 category=CAT_CONTRACTS,
                 when_to_read="Post-ship summary (added after `dotagent project resolve`)."),
+    SchemaEntry(".agent/project/modules/<id>/HISTORY.md", required=False, kind=KIND_GENERATED,
+                category=CAT_CONTRACTS,
+                when_to_read=(
+                    "GENERATED · per-module cycle log for THIS service's modules. "
+                    "Built from cycle artifacts; do not hand-edit."
+                )),
+    SchemaEntry(".agent/dashboard.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read=(
+                    "GENERATED · service-local health snapshot: this service's open "
+                    "contracts, pending QA, stalled cycles. Refreshed on `dotagent sync`."
+                )),
 
     SchemaEntry("docs", required=False, kind=KIND_DIR,
                 description="Service-owned source docs.",
@@ -407,6 +434,12 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
     SchemaEntry("../contracts.md", required=False, kind=KIND_GENERATED,
                 category=CAT_PRIORITIES,
                 when_to_read="INHERITED · Tier-1 cross-repo contracts rollup. See all services' state at a glance."),
+    SchemaEntry("../.agent/dashboard.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read=(
+                    "INHERITED · project-root health snapshot (open contracts across "
+                    "all services, pending QA, stalled cycles)."
+                )),
     SchemaEntry("../.agent/project/modules", required=False, kind=KIND_DIR,
                 category=CAT_CONTRACTS,
                 when_to_read=(
@@ -414,7 +447,7 @@ _SERVICE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
                     "If your service has a slice (module.yaml has `cross_module: ...`), "
                     "the parent's cycle contract is the authoritative agreement."
                 )),
-    SchemaEntry("../docs/service-registry.md", required=False, kind=KIND_FILE,
+    SchemaEntry("../docs/service-registry.md", required=False, kind=KIND_GENERATED,
                 category=CAT_ARCHITECTURE,
                 when_to_read="INHERITED · what each service in this project does. Start here when navigating to a sibling."),
     SchemaEntry("../docs/shared-contracts.md", required=False, kind=KIND_FILE,
@@ -493,6 +526,18 @@ _SINGLE_REPO_ENTRIES: tuple[SchemaEntry, ...] = (
                 since="0.4.0",
                 category=CAT_PRIORITIES,
                 when_to_read="Open + frozen contracts dashboard."),
+    SchemaEntry(".agent/project/modules/<id>/HISTORY.md", required=False, kind=KIND_GENERATED,
+                category=CAT_CONTRACTS,
+                when_to_read=(
+                    "GENERATED · per-module cycle log (status + QA outcome + sha per cycle). "
+                    "Built from cycle artifacts; do not hand-edit."
+                )),
+    SchemaEntry(".agent/dashboard.md", required=False, kind=KIND_GENERATED,
+                category=CAT_PRIORITIES,
+                when_to_read=(
+                    "GENERATED · project health snapshot: open contracts, pending QA, "
+                    "stalled cycles, doc staleness, recent activity. Refreshed on `dotagent sync`."
+                )),
 
     SchemaEntry("docs", required=False, kind=KIND_DIR,
                 category=CAT_HIDDEN),
