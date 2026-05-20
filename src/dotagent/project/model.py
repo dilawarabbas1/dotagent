@@ -313,6 +313,8 @@ class Project:
     brief_objectives_covered: list[str] = field(default_factory=list)
     brief_features_covered: list[str] = field(default_factory=list)
     features_to_modules: dict[str, list[str]] = field(default_factory=dict)
+    # PR #12: cross-repo manifest. Each entry: {id, path, remote?, default_branch?, role?}
+    repos: list[dict] = field(default_factory=list)
 
     # transient: loaded modules
     modules: dict[str, Module] = field(default_factory=dict)
@@ -334,6 +336,7 @@ class Project:
             "brief_objectives_covered": list(self.brief_objectives_covered),
             "brief_features_covered": list(self.brief_features_covered),
             "features_to_modules": dict(self.features_to_modules),
+            "repos": [dict(r) for r in self.repos],
         }
 
     @classmethod
@@ -353,6 +356,7 @@ class Project:
             brief_objectives_covered=list(d.get("brief_objectives_covered") or []),
             brief_features_covered=list(d.get("brief_features_covered") or []),
             features_to_modules=dict(d.get("features_to_modules") or {}),
+            repos=[dict(r) for r in (d.get("repos") or [])],
         )
 
 
