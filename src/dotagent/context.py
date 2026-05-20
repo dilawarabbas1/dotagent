@@ -292,6 +292,14 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
     project_name = (config.get("project", "name") or paths.repo.name) if config else paths.repo.name
     sources = load_cache(paths)
     agent_sources = _read_agent_sources(paths)
+    # PR #11: overlay parent chain if `parent:` declared
+    try:
+        from .layered import merge_agent_sources, resolve_parent_chain
+        parent_chain = resolve_parent_chain(paths)
+        agent_sources = merge_agent_sources(agent_sources, parent_chain, paths)
+    except Exception as exc:  # noqa: BLE001
+        from .logging import log_exception
+        log_exception("parent chain merge failed", exc)
     pointer_cards = _list_pointer_cards(paths)
     personal = _read_personal(paths, actor) if actor else {}
     current = WorkingMemory(paths, actor).load_current() if actor else CurrentState(actor="")
@@ -324,11 +332,14 @@ def build(paths: Paths, *, actor: str = "", config: Config | None = None) -> Con
         from .logging import log_exception
         log_exception("project context load failed", e)
 
-    # PR #7: load project_brief.md if present (best-effort)
+    # PR #7 + PR #11: load project_brief.md from local first, parent chain fallback
     brief = None
     try:
         from .project.brief import load as load_brief
         brief = load_brief(paths.project_brief)
+        if brief is None:
+            from .layered import load_parent_brief, resolve_parent_chain
+            brief = load_parent_brief(resolve_parent_chain(paths))
     except Exception as e:  # noqa: BLE001
         from .logging import log_exception
         log_exception("brief load failed", e)
