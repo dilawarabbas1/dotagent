@@ -654,6 +654,29 @@ commit.
 anywhere. Useful for diffing against on-disk CLAUDE.md
 (`dotagent manifest --diff CLAUDE.md` — timestamp-normalized).
 
+### Headless project onboarding (0.5.2)
+
+`dotagent project brief upload`, `dotagent project init`, and `dotagent
+project add-module` now accept `--from-stdin` and `--format json`. This
+lets Coda drive the entire project-setup ceremony headlessly:
+
+```bash
+# Brief — markdown body on stdin
+echo "<brief.md>" | dotagent project brief upload --from-stdin --force --format json
+
+# Project — JSON payload on stdin
+echo '{"name":"X","goal":"...","success_criteria":[...]}' \
+  | dotagent project init --from-stdin --format json
+
+# Module — JSON payload on stdin
+echo '{"name":"Auth","plan":{"acceptance_criteria":[...]}}' \
+  | dotagent project add-module --from-stdin --format json
+```
+
+The full conversational flow that drives these three commands is in
+`CODA_ONBOARDING_PROMPT.md` — drop it in as the Coda system prompt when
+the user says "start a new project."
+
 ### Quick v0.5 cheat sheet for Coda
 
 | Need | Command |

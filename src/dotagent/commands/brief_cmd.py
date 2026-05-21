@@ -96,28 +96,65 @@ def init_cmd(name: str, owner: str, vision: str, non_interactive: bool, force: b
     click.echo("edit the file and run `dotagent project brief check` to audit.")
 
 
-@brief_group.command(name="upload", help="Replace project_brief.md with content from PATH.")
-@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@brief_group.command(name="upload", help="Replace project_brief.md with content from PATH or stdin.")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=False)
+@click.option("--from-stdin", "from_stdin", is_flag=True, help="Read brief markdown from stdin instead of a file (for orchestrator use).")
 @click.option("--force", is_flag=True, help="Overwrite without prompting.")
-def upload_cmd(path: Path, force: bool) -> None:
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format. `json` returns a receipt for orchestrator consumption.")
+def upload_cmd(path: Path | None, from_stdin: bool, force: bool, fmt: str) -> None:
     repo = find_repo_root()
     target = _brief_path(repo)
 
-    if path.suffix.lower() not in (".md", ".markdown", ".txt"):
-        click.echo("v1 supports .md / .txt only; PDF/DOCX import deferred.", err=True)
-        sys.exit(1)
+    if from_stdin and path is not None:
+        click.echo("--from-stdin and PATH are mutually exclusive", err=True)
+        sys.exit(2)
+    if not from_stdin and path is None:
+        click.echo("supply PATH or --from-stdin", err=True)
+        sys.exit(2)
+
+    if from_stdin:
+        content = sys.stdin.read()
+        source_label = "<stdin>"
+    else:
+        if path.suffix.lower() not in (".md", ".markdown", ".txt"):
+            click.echo("v1 supports .md / .txt only; PDF/DOCX import deferred.", err=True)
+            sys.exit(1)
+        content = path.read_text()
+        source_label = str(path)
 
     if target.exists() and not force:
+        if from_stdin or fmt == "json":
+            click.echo(f"brief exists at {target.relative_to(repo)}; pass --force to overwrite", err=True)
+            sys.exit(1)
         click.confirm(f"overwrite {target.relative_to(repo)}?", abort=True)
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(path.read_text())
-    click.echo(f"✓ wrote {target.relative_to(repo)} from {path}")
+    target.write_text(content)
 
-    # Parse and report what was found
-    b = parse(target.read_text())
-    click.echo(f"  parsed: {len(b.objectives)} OBJ · {len(b.features)} FEAT · "
-               f"{len(b.hard_rules)} RULE · {len(b.integrations)} integration(s)")
+    # Parse and report what was found.
+    b = parse(content)
+    counts = {
+        "objectives": len(b.objectives),
+        "features": len(b.features),
+        "hard_rules": len(b.hard_rules),
+        "integrations": len(b.integrations),
+    }
+
+    if fmt == "json":
+        click.echo(json.dumps({
+            "ok": True,
+            "path": str(target.relative_to(repo)),
+            "source": source_label,
+            "parsed": counts,
+            "name": b.name,
+            "vision": b.vision,
+        }, indent=2))
+        return
+
+    click.echo(f"✓ wrote {target.relative_to(repo)} from {source_label}")
+    click.echo(f"  parsed: {counts['objectives']} OBJ · {counts['features']} FEAT · "
+               f"{counts['hard_rules']} RULE · {counts['integrations']} integration(s)")
 
 
 @brief_group.command(name="show", help="Print the brief.")
