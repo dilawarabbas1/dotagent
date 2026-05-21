@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
 
 import click
@@ -11,7 +13,9 @@ from ..paths import Paths, find_repo_root
 from ..project.handoff import render_module_plan, render_scope
 from ..project.model import (
     Module,
+    ModulePlan,
     ModuleState,
+    Project,
     next_module_id,
     now,
     save_module,
@@ -50,40 +54,162 @@ def project_group() -> None:
 
 # ---- init ------------------------------------------------------------------
 
-@project_group.command(name="init", help="Interactive Q&A to build the project-level scope.")
+@project_group.command(name="init", help="Build the project-level scope (interactive Q&A or --from-stdin JSON).")
 @click.option("--no-llm", is_flag=True, help="Skip LLM-assisted vagueness probing.")
-def cmd_init(no_llm: bool) -> None:
+@click.option("--from-stdin", "from_stdin", is_flag=True,
+              help="Read project JSON from stdin instead of running the Q&A. For orchestrator use.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format. `json` returns a receipt.")
+def cmd_init(no_llm: bool, from_stdin: bool, fmt: str) -> None:
     paths = _paths()
     if paths.project_plan.exists():
-        click.echo(f"Project already initialized at {paths.project_plan}. Edit by hand or remove to start over.")
+        msg = f"Project already initialized at {paths.project_plan}. Edit by hand or remove to start over."
+        if fmt == "json":
+            click.echo(json.dumps({"ok": False, "error": "already-initialized",
+                                   "path": str(paths.project_plan.relative_to(paths.repo))}))
+            raise SystemExit(1)
+        click.echo(msg)
         raise SystemExit(0)
-    click.echo("dotagent project init — building project scope. Type <EDITOR> in any answer to open $EDITOR.\n")
-    llm = LLM() if not no_llm else None
-    project = build_project(llm=llm)
+
+    if from_stdin:
+        try:
+            payload = json.loads(sys.stdin.read() or "{}")
+        except json.JSONDecodeError as exc:
+            click.echo(f"invalid JSON on stdin: {exc}", err=True)
+            raise SystemExit(2)
+        project = _project_from_payload(payload)
+    else:
+        click.echo("dotagent project init — building project scope. Type <EDITOR> in any answer to open $EDITOR.\n")
+        llm = LLM() if not no_llm else None
+        project = build_project(llm=llm)
+
     init_project(paths, project)
+
+    if fmt == "json":
+        click.echo(json.dumps({
+            "ok": True,
+            "name": project.name,
+            "module_ids": list(project.module_ids),
+            "plan_path": str(paths.project_plan.relative_to(paths.repo)),
+            "scope_path": str(paths.project_scope_md.relative_to(paths.repo)),
+        }, indent=2))
+        return
+
     click.echo(f"\n✓ project '{project.name}' initialized")
     click.echo(f"  · plan: {paths.project_plan.relative_to(paths.repo)}")
     click.echo(f"  · scope: {paths.project_scope_md.relative_to(paths.repo)}")
     click.echo(f"\n→ next: `dotagent project add-module <name>` for each functional unit you'll build.")
 
 
+def _project_from_payload(payload: dict) -> Project:
+    """Build a Project from an orchestrator-supplied JSON payload.
+
+    Expected shape (every field optional except `name`):
+        {
+          "name": "Aigent",
+          "goal": "...",
+          "description": "...",
+          "out_of_scope": ["..."],
+          "success_criteria": ["..."],
+          "stakeholders": ["..."],
+          "constraints": ["..."],
+          "tools": { "development": {...}, "qa": {...}, ... },
+          "brief": ".agent/project_brief.md",
+          "brief_objectives_covered": ["OBJ-01"],
+          "brief_features_covered": ["FEAT-01"],
+          "features_to_modules": {"FEAT-01": []}
+        }
+    """
+    name = (payload.get("name") or "").strip()
+    if not name:
+        click.echo("payload missing required field: name", err=True)
+        raise SystemExit(2)
+    return Project(
+        name=name,
+        goal=payload.get("goal", "") or "",
+        description=payload.get("description", "") or "",
+        out_of_scope=list(payload.get("out_of_scope") or []),
+        success_criteria=list(payload.get("success_criteria") or []),
+        stakeholders=list(payload.get("stakeholders") or []),
+        constraints=list(payload.get("constraints") or []),
+        created_at=now(),
+        module_ids=list(payload.get("module_ids") or []),
+        tools=dict(payload.get("tools") or {}),
+        brief=payload.get("brief", "") or "",
+        brief_version=int(payload.get("brief_version") or 0),
+        brief_objectives_covered=list(payload.get("brief_objectives_covered") or []),
+        brief_features_covered=list(payload.get("brief_features_covered") or []),
+        features_to_modules=dict(payload.get("features_to_modules") or {}),
+    )
+
+
 # ---- add-module ------------------------------------------------------------
 
-@project_group.command(name="add-module", help="Interactive Q&A to plan a new module.")
-@click.argument("name")
+@project_group.command(name="add-module", help="Plan a new module (interactive Q&A or --from-stdin JSON).")
+@click.argument("name", required=False)
 @click.option("--no-llm", is_flag=True)
-def cmd_add_module(name: str, no_llm: bool) -> None:
+@click.option("--from-stdin", "from_stdin", is_flag=True,
+              help="Read module JSON from stdin instead of running the Q&A. For orchestrator use.")
+@click.option("--format", "fmt", type=click.Choice(["text", "json"]), default="text",
+              help="Output format. `json` returns a receipt.")
+def cmd_add_module(name: str | None, no_llm: bool, from_stdin: bool, fmt: str) -> None:
     paths = _paths()
     project = require_project(paths)
-    mid = next_module_id(project, name)
-    click.echo(f"adding module {mid} ({name})\n")
-    llm = LLM() if not no_llm else None
-    plan = build_module(name, project, llm=llm)
-    mod = Module(id=mid, name=name, plan=plan, created_at=now())
+
+    if from_stdin:
+        try:
+            payload = json.loads(sys.stdin.read() or "{}")
+        except json.JSONDecodeError as exc:
+            click.echo(f"invalid JSON on stdin: {exc}", err=True)
+            raise SystemExit(2)
+        mod_name = (payload.get("name") or name or "").strip()
+        if not mod_name:
+            click.echo("module name missing (supply --argument or `name` in payload)", err=True)
+            raise SystemExit(2)
+        mid = payload.get("id") or next_module_id(project, mod_name)
+        plan = ModulePlan(
+            purpose=payload.get("plan", {}).get("purpose", "") or "",
+            in_scope=list((payload.get("plan") or {}).get("in_scope") or []),
+            out_of_scope=list((payload.get("plan") or {}).get("out_of_scope") or []),
+            acceptance_criteria=list((payload.get("plan") or {}).get("acceptance_criteria") or []),
+            dependencies=list((payload.get("plan") or {}).get("dependencies") or []),
+            technical_approach=(payload.get("plan") or {}).get("technical_approach", "") or "",
+            risks=list((payload.get("plan") or {}).get("risks") or []),
+            estimated_effort=(payload.get("plan") or {}).get("estimated_effort", "") or "",
+        )
+        mod = Module(
+            id=mid, name=mod_name, plan=plan, created_at=now(),
+            implements_features=list(payload.get("implements_features") or []),
+            cross_module=payload.get("cross_module", "") or "",
+        )
+    else:
+        if not name:
+            click.echo("supply NAME argument or pass --from-stdin", err=True)
+            raise SystemExit(2)
+        mid = next_module_id(project, name)
+        click.echo(f"adding module {mid} ({name})\n")
+        llm = LLM() if not no_llm else None
+        plan = build_module(name, project, llm=llm)
+        mod = Module(id=mid, name=name, plan=plan, created_at=now())
+
     op_add_module(paths, project, mod)
-    click.echo(f"\n✓ {mid} planned. {len(plan.acceptance_criteria)} acceptance criteria.")
-    click.echo(f"  · plan: {paths.module_plan_md(mid).relative_to(paths.repo)}")
-    click.echo(f"\n→ when ready: `dotagent project start {mid}`")
+
+    if fmt == "json":
+        click.echo(json.dumps({
+            "ok": True,
+            "id": mod.id,
+            "name": mod.name,
+            "state": mod.state,
+            "implements_features": list(mod.implements_features),
+            "cross_module": mod.cross_module,
+            "acceptance_criteria_count": len(mod.plan.acceptance_criteria),
+            "plan_path": str(paths.module_plan_md(mod.id).relative_to(paths.repo)),
+        }, indent=2))
+        return
+
+    click.echo(f"\n✓ {mod.id} planned. {len(mod.plan.acceptance_criteria)} acceptance criteria.")
+    click.echo(f"  · plan: {paths.module_plan_md(mod.id).relative_to(paths.repo)}")
+    click.echo(f"\n→ when ready: `dotagent project start {mod.id}`")
 
 
 # ---- list / status / show --------------------------------------------------

@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-05-20
+
+### Added — headless project onboarding
+
+Three primitives gain `--from-stdin` + `--format json` so Coda (or any
+orchestrator) can run the full project-setup ceremony without invoking
+the interactive Q&A. The conversation lives in the orchestrator; dotagent
+stays the data layer.
+
+- **`dotagent project brief upload --from-stdin --force [--format json]`**
+  — accepts the brief markdown body on stdin. Returns a parsed-counts
+  receipt (`objectives`, `features`, `hard_rules`, `integrations`,
+  `name`, `vision`) so the orchestrator can verify what landed.
+- **`dotagent project init --from-stdin [--format json]`** — accepts a
+  Project JSON payload (`name` required; `goal`, `description`,
+  `success_criteria`, `stakeholders`, `constraints`, `out_of_scope`,
+  `brief`, `brief_version`, `brief_objectives_covered`,
+  `brief_features_covered`, `features_to_modules`, `tools` optional).
+  Receipt confirms plan/scope paths.
+- **`dotagent project add-module --from-stdin [--format json]`** —
+  accepts a Module JSON payload (`name` required; `id`, `cross_module`,
+  `implements_features`, `plan.{purpose,in_scope,out_of_scope,
+  acceptance_criteria,dependencies,technical_approach,risks,
+  estimated_effort}` optional). Receipt confirms id + acceptance count.
+
+`--format json` mode also returns structured errors on misuse (missing
+required field, invalid JSON, already-initialized) so orchestrators can
+branch on them.
+
+### Added — Coda onboarding prompt
+
+- **`CODA_ONBOARDING_PROMPT.md`** — drop-in system prompt for the Coda
+  agent that handles "start a new project." Drives the conversation
+  through three phases (brief → project → module slate), calls the new
+  primitives, validates with `dotagent project brief check` as the gate.
+- Explicit fresh-project section: enumerates which files are EXPECTED
+  to be absent on day zero (feature_master, FM-*.md, bug-registry,
+  anti-patterns, architecture, db-impact-map, redis-key-registry, ops/*,
+  source code) and reinforces that none of those are Coda's to create
+  during onboarding — they come into existence inside dev cycles, by
+  Claude, as work ships. The boundary holds even on day zero.
+- `CODA_PROMPT.md` gains a "Headless project onboarding (0.5.2)" pointer
+  in Section 8.5.
+
+### Tests
+
++15 in `tests/test_headless_onboarding.py`:
+- Brief upload from stdin (writes file · json receipt · refuses without
+  force · rejects path+stdin · rejects neither)
+- Project init from stdin (writes plan · requires name · invalid JSON
+  · refuses when already initialized)
+- Add-module from stdin (full payload · minimum payload · cross_module
+  · requires name · explicit id override)
+- End-to-end flow (brief → init → add-module, three receipts chain
+  cleanly)
+
+Full suite: **748 passed, 2 skipped.**
+
 ## [0.5.1] — 2026-05-20
 
 ### Changed
