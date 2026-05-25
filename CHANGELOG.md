@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-05-21
+
+### Added — dotgraph integration (schema + adapter + lifecycle)
+
+dotagent now detects [dotgraph](https://github.com/dilawarabbas1/code-graph)
+at render time and refreshes graph-derived docs during sync; doctor
+reports the graph's freshness; the contract scaffold gained a
+`## Surfaces` section that downstream gates can pipe into `dotgraph
+reconcile`. Cycle orchestration and reconcile gating stay in the
+consumer (Coda); dotagent only manages documents.
+
+Three additive surfaces:
+
+1. **Contract Surfaces schema.** Every freshly scaffolded `contract.md`
+   carries a `## Surfaces` section with a fenced YAML block whose key
+   names match dotgraph's `reconcile` flags verbatim (`tables`,
+   `redis_keys`, `kafka_topics`, `collections`, plus `code` + `callers_to_update`
+   + `tests_to_update`). Old contracts without it continue to validate
+   and score — the anchor is optional, not in `SECTION_ANCHORS`.
+   `dotagent project contract score --json` now emits
+   `surfaces_enumerated` (count) and `surfaces_present` (bool)
+   alongside the existing rubric — observability, not enforcement.
+2. **Adapter "Code-graph awareness" block.** When `.dotgraph/graph.db`
+   exists at the project root, every rendered adapter (CLAUDE.md,
+   .cursorrules, copilot-instructions.md, AGENTS.md) gains a
+   rules-of-engagement section listing the 5 dotgraph MCP tools
+   (`context_pack`, `impact`, `reconcile`, `find_refs`, `search`) and
+   the 5 static doc snapshots emit-docs maintains. Filesystem check
+   only — render stays deterministic and never shells to dotgraph.
+3. **Doctor + sync wiring.** `dotagent doctor --format json` now
+   returns `{"diagnoses": [...], "dotgraph": {...}}` with version,
+   db_present, dirty_files, stale, error. `dotagent sync` runs
+   `dotgraph emit-docs --target all` as a pre-step when the db is
+   present; opt out via `--skip-dotgraph`. Failures log and proceed.
+
+### Deviations from the integration spec (resolved without help)
+
+- `dotgraph status --json` does not expose `last_indexed`. Doctor
+  emits `last_indexed: null`; `stale` is derived from `dirty_files > 0`
+  alone when the timestamp is unavailable.
+- `dotgraph reconcile` CLI has no `--claimed-callers` flag; the
+  `callers_to_update:` YAML key in Surfaces is consumed via the MCP
+  `reconcile` tool, not the CLI.
+
+### Tests (+44)
+
+- `tests/project/test_contract_surfaces.py` — 13 tests (parse, count,
+  score, backward compat, content-hash)
+- `tests/render/test_code_graph_awareness.py` — 13 tests (helper,
+  manifest, v1, adapter parity, content invariants)
+- `tests/test_dotgraph_integration.py` — 18 tests (probe matrix,
+  emit_docs, doctor JSON/text, sync pre-step)
+
+Full suite: 792 passed, 2 skipped.
+
 ## [0.5.2] — 2026-05-20
 
 ### Added — headless project onboarding
