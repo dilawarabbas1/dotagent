@@ -26,12 +26,20 @@ def test_json_output_round_trips_and_has_expected_keys(tmp_path: Path, monkeypat
     assert result.exit_code == 0, result.output
 
     payload = json.loads(result.output)
-    assert set(payload.keys()) == {"total", "max", "band", "signals"}
+    # Core rubric keys + v0.5.3 surfaces observability fields.
+    assert set(payload.keys()) == {
+        "total", "max", "band", "signals",
+        "surfaces_enumerated", "surfaces_present",
+    }
     assert isinstance(payload["total"], int)
     assert payload["max"] == 33
     assert payload["band"] in {"ready", "polish", "rework", "not_ready"}
     assert isinstance(payload["signals"], list)
     assert len(payload["signals"]) == 11
+    # The fresh-init scaffold uses placeholder values, so the count is 0
+    # (placeholders are excluded). Confirms the placeholder filter works.
+    assert payload["surfaces_enumerated"] == 0
+    assert payload["surfaces_present"] is False
     for s in payload["signals"]:
         assert set(s.keys()) == {"id", "name", "score", "max", "evidence", "fix"}
         assert s["id"].startswith("S")

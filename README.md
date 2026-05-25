@@ -349,9 +349,11 @@ DOTAGENT_DEBUG=1 dotagent sync   # surface silenced exceptions
 
 ## Status
 
-**v0.5.0** — schema-driven navigation manifest is the default renderer. Layered project architecture, durable business-intent capture, end-to-end traceability, per-repo contracts dashboards, plan-negotiation primitives, cross-repo rollups, git-layout enforcement, derived-files orchestrator (service-registry · HISTORY · dashboard), hand-maintained docs convention, doc-coverage CLI.
+**v0.5.3** — schema-driven navigation manifest is the default renderer. Layered project architecture, durable business-intent capture, end-to-end traceability, per-repo contracts dashboards, plan-negotiation primitives, cross-repo rollups, git-layout enforcement, derived-files orchestrator (service-registry · HISTORY · dashboard), hand-maintained docs convention, doc-coverage CLI.
 
-**733 tests passing.** See [`CHANGELOG.md`](CHANGELOG.md) for what changed when.
+dotagent now detects [dotgraph](https://github.com/dilawarabbas1/code-graph) at render time and refreshes graph-derived docs during sync; doctor reports the graph's freshness; the contract scaffold gained a `## Surfaces` section that downstream gates can pipe into `dotgraph reconcile`.
+
+**792 tests passing.** See [`CHANGELOG.md`](CHANGELOG.md) for what changed when.
 
 ---
 

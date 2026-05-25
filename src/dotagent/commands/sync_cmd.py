@@ -18,7 +18,11 @@ from ..sources import reindex_all
 @click.option("--no-hooks", is_flag=True, help="Skip hook (re)install.")
 @click.option("--no-reindex", is_flag=True, help="Skip docs/ reindex (use cached entries).")
 @click.option("--dry-run", is_flag=True, help="Show unified diff vs on-disk files; do not write.")
-def sync(no_hooks: bool, no_reindex: bool, dry_run: bool) -> None:
+@click.option(
+    "--skip-dotgraph", is_flag=True,
+    help="Skip the `dotgraph emit-docs` pre-step. Useful for CI envs without dotgraph installed.",
+)
+def sync(no_hooks: bool, no_reindex: bool, dry_run: bool, skip_dotgraph: bool) -> None:
     repo = find_repo_root()
     paths = Paths(repo=repo)
     if not paths.config.exists():
@@ -27,6 +31,18 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool) -> None:
 
     identity = resolve(repo)
     upsert_developer(paths, identity)
+
+    # Pre-step: refresh dotgraph's emitted docs (dependency-map, db-impact-map,
+    # redis-key-registry, kafka-topics, endpoints) so the subsequent reindex
+    # reads fresh content. Best-effort: any failure is logged and ignored —
+    # adapter render proceeds against whatever's on disk.
+    if not skip_dotgraph and (paths.repo / ".dotgraph" / "graph.db").exists():
+        from ..dotgraph_probe import emit_docs as _dg_emit_docs
+        ok, msg = _dg_emit_docs(paths.repo)
+        if ok:
+            click.echo(f"· {msg}")
+        else:
+            click.echo(f"  ! {msg} (continuing)", err=True)
 
     if not no_reindex:
         idx = reindex_all(

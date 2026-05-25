@@ -30,6 +30,7 @@ def render_body(ctx: Context, *, tool_label: str = "AI coding agent") -> str:
     parts.append(_render_conflicts(ctx))
     parts.append(_render_stale_rules_warning(ctx))
     parts.append(_render_rules(ctx))
+    parts.append(_render_code_graph_awareness(ctx))
     parts.append(_render_bug_registry(ctx))
     parts.append(_render_anti_patterns(ctx))
     parts.append(_render_db_impact(ctx))
@@ -246,6 +247,14 @@ def _render_rules(ctx: Context) -> str:
     if not body:
         return ""
     return "## Project rules (hard constraints)\n\n" + body
+
+
+def _render_code_graph_awareness(ctx: Context) -> str:
+    """v0.5.3+ — emit the dotgraph MCP awareness block when `.dotgraph/graph.db`
+    exists at the repo root. Suppressed otherwise. Filesystem check only;
+    does not shell to dotgraph (render must stay deterministic)."""
+    from ..render.workflow import code_graph_awareness_block
+    return code_graph_awareness_block(ctx.repo_path)
 
 
 def _render_bug_registry(ctx: Context) -> str:
