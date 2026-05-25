@@ -330,6 +330,236 @@ def _emit_docs_legacy(
 
 
 # ---------------------------------------------------------------------------
+# v0.5.4 — Workspace (multi-repo) support (issue #3)
+# ---------------------------------------------------------------------------
+#
+# Decision A: auto-pivot when `dotgraph-workspace.yml` exists at the repo
+# root. dotgraph 0.1.11 ships `dotgraph workspace emit-docs --json` that
+# does the per-repo loop on its side — one subprocess call, aggregate
+# JSON back. dotagent doesn't parse the workspace YAML at all.
+
+WORKSPACE_FILE = "dotgraph-workspace.yml"
+
+
+def workspace_present(repo_root: Path) -> bool:
+    """True iff `dotgraph-workspace.yml` exists at `repo_root`."""
+    return (Path(repo_root) / WORKSPACE_FILE).exists()
+
+
+def workspace_status(repo_root: Path) -> dict:
+    """Read-only workspace summary for `dotagent doctor`.
+
+    Parses `dotgraph-workspace.yml` (stdlib `yaml.safe_load`) to enumerate
+    declared child repos, then checks each repo's `.dotgraph/graph.db`
+    for presence. Does NOT shell to dotgraph — keeps `doctor` truly
+    read-only and fast.
+
+    Returns:
+        {"yml_present": bool,
+         "repos": [{"name": str, "indexed": bool, "path": str}, ...]}
+
+    `indexed` is True iff `<repo>/.dotgraph/graph.db` exists on disk.
+    Returns `{"yml_present": False, "repos": []}` when the yml is
+    missing OR malformed. Never raises.
+    """
+    repo = Path(repo_root)
+    yml = repo / WORKSPACE_FILE
+    if not yml.exists():
+        return {"yml_present": False, "repos": []}
+
+    try:
+        import yaml
+        data = yaml.safe_load(yml.read_text()) or {}
+    except Exception:  # noqa: BLE001 — yaml errors, encoding, etc.
+        return {"yml_present": True, "repos": []}
+
+    repos_out: list[dict] = []
+    repos_raw = data.get("repos") if isinstance(data, dict) else None
+    if not isinstance(repos_raw, list):
+        return {"yml_present": True, "repos": []}
+
+    for entry in repos_raw:
+        # Tolerant: entries can be plain strings (paths) OR dicts.
+        if isinstance(entry, str):
+            path_str = entry
+            name = Path(path_str).name or path_str
+        elif isinstance(entry, dict):
+            path_str = entry.get("path") or entry.get("dir") or ""
+            name = entry.get("name") or (Path(path_str).name if path_str else "")
+            if not name:
+                continue
+        else:
+            continue
+        if not path_str:
+            continue
+        # Resolve relative to repo root
+        child = (repo / path_str).resolve() if not Path(path_str).is_absolute() \
+                else Path(path_str)
+        db = child / ".dotgraph" / "graph.db"
+        repos_out.append({
+            "name":    str(name),
+            "path":    str(child),
+            "indexed": db.exists(),
+        })
+    return {"yml_present": True, "repos": repos_out}
+
+
+def workspace_index(repo_root: Path) -> tuple[bool, str]:
+    """Run `dotgraph workspace index --root <repo>`. Best-effort.
+
+    Returns `(ok, message)`. dotgraph indexes every child repo declared
+    in the workspace yml. Used before `workspace_emit_docs` so all child
+    repos have a fresh graph.
+
+    Failure modes: missing binary, non-zero exit, timeout. All
+    captured; nothing raises.
+    """
+    if shutil.which("dotgraph") is None:
+        return False, "dotgraph not on PATH; skipping workspace index"
+    try:
+        result = subprocess.run(
+            ["dotgraph", "workspace", "index", "--root", str(repo_root)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=600,    # workspace index can be slow on multi-repo
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"dotgraph workspace index failed: {exc}"
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout or "").strip().splitlines()[-1:]
+        snippet = tail[0][:_STDERR_MAX_CHARS] if tail else "non-zero exit"
+        return False, f"dotgraph workspace index exit={result.returncode}: {snippet}"
+    return True, "dotgraph workspace index ok"
+
+
+def workspace_emit_docs(
+    repo_root: Path,
+    *,
+    out_subdir: str = "docs/codegraph",
+) -> tuple[bool, str, dict]:
+    """Run `dotgraph workspace emit-docs --json` and parse the aggregate.
+
+    Returns `(ok, message, payload)`. `payload` shape (dotgraph 0.1.11+):
+
+        {
+          "workspace": "redscope",
+          "results": [
+            {"repo": "backend", "path": "...", "status": "ok",
+             "written": [{"target", "path", "bytes"}, ...],
+             "skipped": ["kafka-topics", "redis-key-registry"]},
+            {"repo": "portal", "path": "...", "status": "ok", ...},
+            {"repo": "admin",  "path": "...", "status": "ok", ...}
+          ],
+          "rendered_at": "..."
+        }
+
+    Per-repo `status` may be:
+      · "ok"           — emit succeeded; `written` + `skipped` populated
+      · "not_indexed"  — repo exists but wasn't indexed (skip silently)
+      · "error"        — repo-specific failure; `message` populated
+
+    Best-effort. Never raises.
+    """
+    if shutil.which("dotgraph") is None:
+        return False, "dotgraph not on PATH; skipping workspace emit-docs", {}
+    cmd = [
+        "dotgraph", "workspace", "emit-docs",
+        "--root", str(repo_root),
+        "--out-subdir", out_subdir,
+        "--json",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=300,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"dotgraph workspace emit-docs failed: {exc}", {}
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout or "").strip().splitlines()[-1:]
+        snippet = tail[0][:_STDERR_MAX_CHARS] if tail else "non-zero exit"
+        return False, f"dotgraph workspace emit-docs exit={result.returncode}: {snippet}", {}
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return False, f"dotgraph workspace emit-docs JSON parse error: {exc}", {}
+    if not isinstance(payload, dict):
+        return False, "dotgraph workspace emit-docs returned non-dict JSON", {}
+    results = payload.get("results") or []
+    ok_count = sum(1 for r in results if r.get("status") == "ok")
+    err_count = sum(1 for r in results if r.get("status") == "error")
+    if err_count:
+        msg = f"dotgraph workspace emit-docs partial: {ok_count} ok, {err_count} error"
+    else:
+        msg = f"dotgraph workspace emit-docs ok ({ok_count} repo(s))"
+    return True, msg, payload
+
+
+def workspace_summary_for_doctor(payload: dict) -> list[dict]:
+    """Transform `workspace_emit_docs` payload into the per-repo summary
+    rows the doctor block expects:
+
+        [{"name": str, "indexed": bool, "last_indexed": str | None,
+          "written": int, "skipped": list[str], "status": str,
+          "error": str | None}, ...]
+
+    Empty list when payload is malformed or missing `results`.
+    """
+    out: list[dict] = []
+    for r in (payload or {}).get("results") or []:
+        if not isinstance(r, dict):
+            continue
+        status = r.get("status", "unknown")
+        written = r.get("written") or []
+        skipped = r.get("skipped") or []
+        out.append({
+            "name":         r.get("repo") or "",
+            "indexed":      status == "ok",
+            "status":       status,
+            "last_indexed": r.get("last_indexed"),
+            "written":      len(written) if isinstance(written, list) else 0,
+            "skipped":      list(skipped) if isinstance(skipped, list) else [],
+            "error":        r.get("message") or r.get("error"),
+        })
+    return out
+
+
+def count_indexable_files(repo_root: Path) -> int:
+    """v0.5.4 heuristic — rough count of files dotgraph would index.
+
+    Used when no `dotgraph-workspace.yml` is present to detect "meta repo
+    masquerading as code repo." When the count is below the threshold
+    (default 20), sync emits a warning suggesting the operator add a
+    workspace yml if real code lives in sibling repos.
+
+    Walks the same skip-dirs as `_any_source_newer_than`. Bounded;
+    returns the count immediately past the threshold so we don't waste
+    time on huge trees. Conservative — extensions matched are the
+    common ones dotgraph supports.
+    """
+    extensions = {
+        ".py", ".pyx", ".ts", ".tsx", ".js", ".jsx", ".mjs",
+        ".go", ".rs", ".java", ".kt", ".scala", ".swift",
+        ".cs", ".rb", ".php", ".vue", ".svelte",
+        ".cpp", ".cc", ".c", ".h", ".hpp",
+    }
+    threshold_cutoff = 50   # stop walking past this; we only care about <20
+    n = 0
+    try:
+        for dirpath, dirnames, filenames in os.walk(repo_root):
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            for fn in filenames:
+                if Path(fn).suffix.lower() in extensions:
+                    n += 1
+                    if n >= threshold_cutoff:
+                        return n
+    except OSError:
+        pass
+    return n
+
+
+# ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
 
@@ -575,6 +805,10 @@ def apply_codegraph_layout(repo_root: Path) -> tuple[list[str], list[str]]:
 __all__ = (
     "DotgraphInfo", "probe", "emit_docs", "ensure_gitignored",
     "apply_codegraph_layout", "CODEGRAPH_SUBDIR",
+    "workspace_present", "workspace_status", "workspace_index",
+    "workspace_emit_docs", "workspace_summary_for_doctor",
+    "count_indexable_files",
+    "WORKSPACE_FILE",
     "STALE_REASON_DIRTY", "STALE_REASON_OLD", "STALE_REASON_INDEX_FILE_OLDER",
     "STALE_REASON_ERROR", "STALE_REASON_NO_DB",
 )

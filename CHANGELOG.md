@@ -4,6 +4,108 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-05-26
+
+### Added — dotgraph integration polish (six follow-ups from RedScope run)
+
+Six additive items tightening the v0.5.3 dotgraph integration. Two
+operator-gated decisions resolved as **(b)**:
+
+1. **Multi-repo intelligence** — auto-pivot to `dotgraph workspace
+   emit-docs --json` when `dotgraph-workspace.yml` is present at repo
+   root. One subprocess call per workspace; aggregate JSON; dotagent
+   doesn't parse workspace yml (except read-only in doctor). Falls
+   back to single-repo flow when no workspace.yml.
+2. **Doc-ownership boundary** — suffix-split layout. Dotgraph emits
+   land under `docs/codegraph/` with a `.generated.md` suffix.
+   Hand-maintained `docs/<name>.md` is preserved + patched ONCE with
+   a reference link section to its generated counterpart.
+
+### Specifically
+
+- **`ensure_gitignored(repo_root)`** — pre-seeds `.gitignore` with
+  `.dotgraph/` before the emit pre-step. Idempotent; variants
+  tolerated.
+- **`emit_docs` signature change** — returns `(ok, msg, payload)`;
+  passes `--skip-empty --json` to dotgraph; legacy fallback for
+  pre-0.1.10 dotgraph that doesn't know those flags.
+- **`apply_codegraph_layout(repo)`** — renames freshly-emitted docs to
+  `.generated.md`, patches hand-maintained files with a one-time
+  reference marker (`<!-- dotagent: links to docs/codegraph/ -->`).
+- **`workspace_status(repo)`** — read-only YAML parse + filesystem
+  check for per-child-repo `.dotgraph/graph.db` existence. Used by
+  doctor (no subprocess).
+- **`workspace_index`, `workspace_emit_docs`** — wrappers for the
+  dotgraph 0.1.11 workspace CLI; used by sync only.
+- **`count_indexable_files(repo)`** — bounded walk that counts source
+  files. Used for the "consider adding a workspace.yml" hint when
+  meta has <20 files and no workspace.yml.
+- **Stale alarm with reasons** — `DotgraphInfo` gains `stale_reasons:
+  list[str]` and `stale_threshold_hours: int`. Doctor JSON exposes
+  both. Default threshold 168h (7d), overridable via
+  `dotagent.dotgraph.stale_threshold_hours` in config. Text mode
+  emits an actionable hint when stale.
+- **Awareness block lock** — regression test added that fails if the
+  rendered "Code-graph awareness" section ever drops or adds a tool.
+  Locked surface: exactly 5 (search · context_pack · impact ·
+  reconcile · find_refs).
+
+### Config knobs
+
+`.agent/config.yaml`:
+
+```yaml
+dotagent:
+  dotgraph:
+    stale_threshold_hours: 168
+    emit_docs:
+      skip_empty: true
+```
+
+### Doctor JSON additions (all additive)
+
+```json
+"dotgraph": {
+  "stale_reasons":         ["dirty_files", "last_indexed_too_old"],
+  "stale_threshold_hours": 168,
+  "workspace": {
+    "yml_present": true,
+    "repos": [{"name": "backend", "path": "...", "indexed": true}, ...]
+  }
+}
+```
+
+### Sync output additions
+
+```
+· added .dotgraph/ to .gitignore
+· dotgraph emit-docs ok (3 written, 2 skipped: kafka-topics, ...)
+· dotgraph workspace index ok                 (workspace flow)
+· dotgraph workspace emit-docs ok (3 repo(s)) (workspace flow)
+· patched 1 hand-maintained doc(s) with codegraph reference: ...
+```
+
+### Backward compat
+
+- `doctor --format json` envelope unchanged; new fields are nested.
+- `emit_docs` callers that destructure 2-tuple break. Only internal
+  callers existed; updated. External callers should switch to the
+  3-tuple `(ok, msg, payload)`.
+- Projects with hand-maintained `docs/dependency-map.md` etc. keep
+  working — they receive a one-time reference-link injection on the
+  first sync, original content preserved verbatim below.
+
+### Tests (+47 → 833 total)
+
+- Awareness lock: +1
+- Gitignore + emit-docs JSON + skip-empty: +11
+- Stale alarm + reasons + threshold: +11
+- Suffix-split layout: +7
+- Workspace + count_indexable_files: +11
+- Plus existing sync tests updated to reflect new file locations
+
+Full suite: 833 passed, 2 skipped.
+
 ## [0.5.3] — 2026-05-21
 
 ### Added — dotgraph integration (schema + adapter + lifecycle)

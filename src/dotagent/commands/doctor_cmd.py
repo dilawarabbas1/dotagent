@@ -10,6 +10,7 @@ from ..dotgraph_probe import (
     STALE_REASON_DIRTY,
     STALE_REASON_OLD,
     probe as _dotgraph_probe,
+    workspace_status as _dotgraph_workspace_status,
 )
 from ..paths import find_repo_root
 
@@ -22,14 +23,18 @@ _GLYPH = {"ok": "✓", "warn": "!", "fail": "✗", "info": "i"}
 def doctor(fmt: str) -> None:
     diagnoses = run_checks()
     dg_info = _safe_dotgraph_probe()
+    workspace = _safe_workspace_probe()
 
     if fmt == "json":
+        dg_payload = dg_info.to_dict() if dg_info else None
+        if dg_payload is not None and workspace is not None:
+            dg_payload["workspace"] = workspace
         payload = {
             "diagnoses": [
                 {"name": d.name, "status": d.status, "message": d.message, "fix": d.fix}
                 for d in diagnoses
             ],
-            "dotgraph": dg_info.to_dict() if dg_info else None,
+            "dotgraph": dg_payload,
         }
         click.echo(json.dumps(payload, indent=2))
     else:
@@ -64,6 +69,29 @@ def _safe_dotgraph_probe():
         return _dotgraph_probe(repo, stale_threshold_hours=threshold)
     except Exception:  # noqa: BLE001 — defense in depth; probe should never raise
         return None
+
+
+def _safe_workspace_probe() -> dict | None:
+    """v0.5.4 — return the `dotgraph.workspace` JSON block.
+
+    Read-only: parses `dotgraph-workspace.yml` directly + filesystem-
+    checks each child repo's `.dotgraph/graph.db`. Does NOT call
+    `dotgraph workspace emit-docs` (write op; that's sync's job).
+
+    Shape:
+        {"yml_present": bool,
+         "repos": [{"name": str, "path": str, "indexed": bool}, ...]}
+
+    Returns None only when there's no repo at all (find_repo_root fails).
+    """
+    try:
+        repo = find_repo_root()
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return _dotgraph_workspace_status(repo)
+    except Exception:  # noqa: BLE001
+        return {"yml_present": False, "repos": []}
 
 
 def _stale_threshold_from_config(repo) -> int | None:
