@@ -59,7 +59,12 @@ from ..canonical_structure import (
     schema_for,
 )
 from ..paths import Paths
-from .workflow import HARD_POLICY, HOW_TO_READ_PROTOCOL, WORKFLOW_CONTRACT_TEMPLATE
+from .workflow import (
+    HARD_POLICY,
+    HOW_TO_READ_PROTOCOL,
+    WORKFLOW_CONTRACT_TEMPLATE,
+    code_graph_awareness_block,
+)
 
 
 # Section headers + render order. Categories not listed here are silently
@@ -183,6 +188,13 @@ def render_manifest(paths: Paths, tier: str | None = None) -> str:
 
     # 4. Hard policy
     sections.append(HARD_POLICY.rstrip())
+
+    # 4a. Code-graph awareness (only when `.dotgraph/graph.db` is present).
+    # Lives in the rules-of-engagement segment so the agent reads the
+    # MCP-tool guidance before it consults the navigation manifest below.
+    cg_block = code_graph_awareness_block(paths.repo)
+    if cg_block:
+        sections.append(cg_block.rstrip())
 
     # 5. MUST READ
     sections.append(_render_must_read(by_category.get(CAT_MUST_READ, [])))
