@@ -220,6 +220,7 @@ def cmd_score(module_id: str, as_json: bool, as_report: bool, min_total: int, no
         raise click.ClickException(f"contract.md missing at {body_path}")
 
     # Score against the substantive body (negotiation log excluded).
+    from ..project.contract import count_surfaces
     from ..project.contract_rubric import score_contract
     full = body_path.read_text()
     anchor = "<!-- anchor: negotiation-log -->"
@@ -227,8 +228,16 @@ def cmd_score(module_id: str, as_json: bool, as_report: bool, min_total: int, no
     substantive = full if idx < 0 else full[:idx]
     result = score_contract(substantive)
 
+    # Surfaces observability (added v0.5.3 for dotgraph integration).
+    # Not part of the rubric — downstream gates (e.g. dotgraph reconcile)
+    # decide enforcement. Placeholders dropped from the count.
+    surfaces_enumerated = count_surfaces(substantive)
+
     if as_json:
-        click.echo(json.dumps(result.to_dict(), indent=2))
+        payload = result.to_dict()
+        payload["surfaces_enumerated"] = surfaces_enumerated
+        payload["surfaces_present"] = surfaces_enumerated > 0
+        click.echo(json.dumps(payload, indent=2))
     elif as_report:
         click.echo(_render_score_report(result, use_color=(sys.stdout.isatty() and not no_color)))
     else:

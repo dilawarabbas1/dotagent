@@ -32,6 +32,8 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass
+
+import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,6 +60,15 @@ SECTION_ANCHORS = (
     "rollback-plan",          # added v0.4 — required for migration-bearing cycles, optional placeholder otherwise
     "business-traceability",  # added v0.5 — every contract cites FEAT + OBJ from project_brief.md
     "negotiation-log",
+)
+
+# Sections that the scaffold emits but the validator does NOT require. Old
+# contracts written before these landed must continue to parse and score.
+# Don't add these to SECTION_ANCHORS — that tuple drives validation.
+OPTIONAL_SECTION_ANCHORS = (
+    "surfaces",   # added v0.5.3 — code/data surfaces this cycle touches.
+                  # Consumed by dotgraph reconcile (key names match dotgraph
+                  # --claimed-* flags verbatim). See docs/CODE_GRAPH_INTEGRATION.md.
 )
 
 # Tokens that may NOT appear in the acceptance-criteria section. Surfacing
@@ -248,6 +259,39 @@ _TEMPLATE = """\
 - **Objective(s) served:** _(populate with OBJ-NN ids)_
 - _Behavior bullets from the feature(s) this slice must satisfy:_
 
+<!-- anchor: surfaces -->
+## Surfaces
+
+> Code/data surfaces this cycle touches. Field names match dotgraph's
+> `reconcile` flags verbatim so consumers can pipe straight through. Empty
+> arrays are fine; missing top-level keys are treated as empty. The
+> downstream gate (e.g. `dotgraph reconcile`) is where enforcement lives;
+> here we enumerate so the diff is meaningful.
+
+```yaml
+surfaces:
+  code:
+    # Functions / methods / classes / files this contract will modify.
+    # id is the dotgraph node id (e.g. function:packages/api/src/orders/create.ts:42:createOrder).
+    # why is a one-line justification visible in contract score / review.
+    - id: <dotgraph_node_id>
+      why: <short reason>
+  data:
+    tables:        []    # SQL table names — mirrors `dotgraph --claimed-tables`
+    columns:       []    # column references like "orders.status"
+    redis_keys:    []    # key patterns — mirrors `dotgraph --claimed-keys`
+    kafka_topics:  []    # topic names — mirrors `dotgraph --claimed-topics`
+    collections:   []    # mongo / nosql collection names
+  callers_to_update:
+    # Callers OUTSIDE the modified files that must be edited because this
+    # contract changes a public signature / contract.
+    - id: <dotgraph_node_id>
+      reason: <why>
+  tests_to_update:
+    # Test files or test-symbol ids exercising the touched surfaces.
+    - <path_or_node_id>
+```
+
 <!-- anchor: negotiation-log -->
 ## Negotiation log
 
@@ -326,6 +370,140 @@ def resolve_actor_id(paths: Paths) -> str:
     except Exception:  # noqa: BLE001 — identity helpers are best-effort here
         pass
     return os.environ.get("USER") or "unknown"
+
+
+# ---- Surfaces parser (v0.5.3 — dotgraph integration) ----------------------
+
+# A fenced YAML block under the `surfaces` anchor. We extract the entire fence
+# and pass to yaml.safe_load. Field names match dotgraph's reconcile flags
+# verbatim — see SURFACES_SCHEMA below for the locked shape.
+_SURFACES_ANCHOR = "<!-- anchor: surfaces -->"
+_FENCED_YAML_RE = re.compile(
+    r"```yaml\s*\n(.*?)\n```",
+    re.DOTALL | re.IGNORECASE,
+)
+# Placeholder tokens the scaffold emits. Real agent-authored values shouldn't
+# contain these; they're dropped when counting `surfaces_enumerated`.
+_PLACEHOLDER_TOKENS = ("<dotgraph_node_id>", "<short reason>", "<path_or_node_id>", "<why>")
+
+
+# Canonical shape of the surfaces dict after parsing. Locked so consumers
+# (Coda, hooks) can rely on it without remapping.
+SURFACES_SCHEMA = {
+    "code": [],                # list of {id, why} dicts
+    "data": {
+        "tables": [],          # mirrors dotgraph --claimed-tables
+        "columns": [],
+        "redis_keys": [],      # mirrors dotgraph --claimed-keys
+        "kafka_topics": [],    # mirrors dotgraph --claimed-topics
+        "collections": [],
+    },
+    "callers_to_update": [],   # list of {id, reason} dicts
+    "tests_to_update": [],     # list of paths/ids
+}
+
+
+def extract_surfaces_block(text: str) -> str:
+    """Return the raw YAML body of the Surfaces section, or "" if absent.
+
+    Pure string extraction — does NOT validate. Use `parse_surfaces` for
+    structured access. The returned string is what would be passed to
+    `yaml.safe_load` (without the ```yaml fence).
+    """
+    idx = text.find(_SURFACES_ANCHOR)
+    if idx < 0:
+        return ""
+    # Search for the next anchor (any) or EOF to bound the section.
+    next_anchor = re.search(_ANCHOR_RE, text[idx + len(_SURFACES_ANCHOR):])
+    section_end = (
+        idx + len(_SURFACES_ANCHOR) + next_anchor.start()
+        if next_anchor else len(text)
+    )
+    section = text[idx + len(_SURFACES_ANCHOR):section_end]
+    m = _FENCED_YAML_RE.search(section)
+    return m.group(1) if m else ""
+
+
+def parse_surfaces(text: str) -> dict:
+    """Parse the Surfaces section into a normalized dict.
+
+    Always returns a dict matching `SURFACES_SCHEMA`. Missing top-level keys
+    are filled with empty arrays/dicts. Placeholder entries (the scaffold's
+    `<dotgraph_node_id>` etc.) are NOT filtered here — `count_surfaces`
+    does that. The raw parse is preserved so a round-trip is byte-faithful.
+
+    On malformed YAML: returns the empty schema (logs the error to nowhere —
+    this is a parser, not a validator). Use `dotagent project contract
+    score --json` to get visibility into surface counts including 0.
+    """
+    raw_yaml = extract_surfaces_block(text)
+    if not raw_yaml.strip():
+        return _empty_surfaces()
+    try:
+        parsed = yaml.safe_load(raw_yaml)
+    except yaml.YAMLError:
+        return _empty_surfaces()
+    if not isinstance(parsed, dict):
+        return _empty_surfaces()
+    inner = parsed.get("surfaces")
+    if not isinstance(inner, dict):
+        return _empty_surfaces()
+
+    code = inner.get("code") or []
+    data_raw = inner.get("data") or {}
+    if not isinstance(data_raw, dict):
+        data_raw = {}
+    data = {
+        "tables":       list(data_raw.get("tables") or []),
+        "columns":      list(data_raw.get("columns") or []),
+        "redis_keys":   list(data_raw.get("redis_keys") or []),
+        "kafka_topics": list(data_raw.get("kafka_topics") or []),
+        "collections":  list(data_raw.get("collections") or []),
+    }
+    return {
+        "code":              list(code) if isinstance(code, list) else [],
+        "data":              data,
+        "callers_to_update": list(inner.get("callers_to_update") or []),
+        "tests_to_update":   list(inner.get("tests_to_update") or []),
+    }
+
+
+def _empty_surfaces() -> dict:
+    return {
+        "code": [],
+        "data": {k: [] for k in SURFACES_SCHEMA["data"]},
+        "callers_to_update": [],
+        "tests_to_update": [],
+    }
+
+
+def _is_placeholder(item) -> bool:
+    """True if `item` is one of the scaffold's placeholder shapes."""
+    if isinstance(item, str):
+        return item in _PLACEHOLDER_TOKENS or item.startswith("<") and item.endswith(">")
+    if isinstance(item, dict):
+        return any(
+            (isinstance(v, str) and v in _PLACEHOLDER_TOKENS)
+            for v in item.values()
+        )
+    return False
+
+
+def count_surfaces(text: str) -> int:
+    """Total enumerated surfaces — real items only, placeholders dropped.
+
+    Counts: `len(code) + len(data.*) (summed) + len(callers_to_update) +
+    len(tests_to_update)` with placeholder entries (e.g. `<dotgraph_node_id>`)
+    excluded. The number a downstream gate would use to decide whether the
+    agent enumerated anything substantive vs left the scaffold's TODOs.
+    """
+    s = parse_surfaces(text)
+    n = sum(1 for x in s["code"] if not _is_placeholder(x))
+    for key in ("tables", "columns", "redis_keys", "kafka_topics", "collections"):
+        n += sum(1 for x in s["data"][key] if not _is_placeholder(x))
+    n += sum(1 for x in s["callers_to_update"] if not _is_placeholder(x))
+    n += sum(1 for x in s["tests_to_update"] if not _is_placeholder(x))
+    return n
 
 
 # ---- init ------------------------------------------------------------------
