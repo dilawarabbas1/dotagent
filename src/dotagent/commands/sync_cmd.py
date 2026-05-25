@@ -36,9 +36,23 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool, skip_dotgraph: bool) -
     # redis-key-registry, kafka-topics, endpoints) so the subsequent reindex
     # reads fresh content. Best-effort: any failure is logged and ignored —
     # adapter render proceeds against whatever's on disk.
+    #
+    # v0.5.4: pre-seed `.gitignore` with `.dotgraph/` (idempotent) so a
+    # fresh dotgraph install doesn't commit the index by accident; pass
+    # `--skip-empty` so empty surfaces (e.g. no kafka in this project) don't
+    # produce stub docs. Config knob `dotagent.dotgraph.emit_docs.skip_empty`
+    # in .agent/config.yaml overrides the default per-project.
     if not skip_dotgraph and (paths.repo / ".dotgraph" / "graph.db").exists():
         from ..dotgraph_probe import emit_docs as _dg_emit_docs
-        ok, msg = _dg_emit_docs(paths.repo)
+        from ..dotgraph_probe import ensure_gitignored as _dg_ensure_gitignored
+
+        gi_msg = _dg_ensure_gitignored(paths.repo)
+        if gi_msg:
+            click.echo(f"· {gi_msg}")
+
+        dg_cfg = ((cfg.raw.get("dotagent") or {}).get("dotgraph") or {}).get("emit_docs") or {}
+        skip_empty = bool(dg_cfg.get("skip_empty", True))
+        ok, msg, _payload = _dg_emit_docs(paths.repo, skip_empty=skip_empty)
         if ok:
             click.echo(f"· {msg}")
         else:

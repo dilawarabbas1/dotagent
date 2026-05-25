@@ -132,40 +132,163 @@ def probe(repo_root: Path) -> DotgraphInfo:
     return info
 
 
-def emit_docs(repo_root: Path) -> tuple[bool, str]:
+def ensure_gitignored(repo_root: Path) -> str:
+    """v0.5.4 — pre-seed `.gitignore` with `.dotgraph/` if missing.
+
+    Called once on the emit pre-step so a brand-new dotgraph install
+    doesn't commit the .dotgraph/ directory by accident. Idempotent.
+
+    Returns one of:
+      - "" — nothing to do (entry already present)
+      - "added .dotgraph/ to .gitignore" — appended to existing .gitignore
+      - "created .gitignore with .dotgraph/" — wrote a fresh file
+
+    Never raises. Errors (e.g. read-only fs) are returned as empty string.
+    """
+    gi = Path(repo_root) / ".gitignore"
+    entry = ".dotgraph/"
+    try:
+        if gi.exists():
+            text = gi.read_text(errors="replace")
+            # Tolerant match — accept `.dotgraph`, `.dotgraph/`, `/.dotgraph/`,
+            # with or without a trailing comment. Skip if any variant present.
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped in {".dotgraph", ".dotgraph/", "/.dotgraph", "/.dotgraph/"}:
+                    return ""
+                if stripped.startswith(".dotgraph") or stripped.startswith("/.dotgraph"):
+                    return ""
+            sep = "" if text.endswith("\n") or text == "" else "\n"
+            gi.write_text(text + sep + entry + "\n")
+            return "added .dotgraph/ to .gitignore"
+        gi.write_text(entry + "\n")
+        return "created .gitignore with .dotgraph/"
+    except OSError:
+        return ""
+
+
+def emit_docs(
+    repo_root: Path,
+    *,
+    skip_empty: bool = True,
+    out_dir: Path | None = None,
+    extra_args: list[str] | None = None,
+) -> tuple[bool, str, dict]:
     """Run `dotgraph emit-docs --target all` in `repo_root`.
 
-    Returns `(ok, message)`. Best-effort: never raises. `ok=False` covers:
-    - dotgraph not on PATH
-    - non-zero exit
-    - timeout (>120s)
-    - any OSError / subprocess error
+    Returns `(ok, message, payload)`. Best-effort: never raises.
+    `ok=False` covers: dotgraph not on PATH, non-zero exit, timeout,
+    OSError, JSON parse failure.
 
-    `message` is short — single line. Suitable for the sync logger's
-    `· dotgraph emit-docs ...` line.
+    `payload` is the parsed `--json` response from dotgraph when
+    available. Shape (dotgraph 0.1.10+):
+
+        {"written": [{"target": str, "path": str, "bytes": int}, ...],
+         "skipped": [str, ...],
+         "rendered_at": "<ISO>"}
+
+    On older dotgraph that doesn't support `--json`, `payload` is `{}`
+    and `message` falls back to a stdout-line summary.
+
+    `skip_empty` defaults to True (v0.5.4 — issue #2). Set False to
+    force all 5 docs to be emitted even if a target has no data. The
+    runtime config knob `dotagent.dotgraph.emit_docs.skip_empty` (in
+    `.agent/config.yaml`) overrides this default per-project.
+
+    `out_dir` overrides dotgraph's default output directory (`<root>/docs/`).
+    Pass `<root>/docs/codegraph` to land under the suffix-split layout
+    (v0.5.4 — issue #4).
+
+    `extra_args` is appended verbatim to the subprocess command — escape
+    hatch for workspace flags that may exist in newer dotgraph builds.
     """
     if shutil.which("dotgraph") is None:
-        return False, "dotgraph not on PATH; skipping emit-docs"
+        return False, "dotgraph not on PATH; skipping emit-docs", {}
+
+    cmd = ["dotgraph", "emit-docs", "--target", "all"]
+    if skip_empty:
+        cmd.append("--skip-empty")
+    if out_dir is not None:
+        cmd.extend(["--out-dir", str(out_dir)])
+    if extra_args:
+        cmd.extend(extra_args)
+    cmd.append("--json")
+
     try:
         result = subprocess.run(
-            ["dotgraph", "emit-docs", "--target", "all"],
+            cmd,
             cwd=str(repo_root),
             capture_output=True,
             text=True,
             timeout=120,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"dotgraph emit-docs failed: {exc}"
+        return False, f"dotgraph emit-docs failed: {exc}", {}
+
+    if result.returncode != 0:
+        # Compat fallback: older dotgraph rejects --json and/or --skip-empty.
+        # Retry without them so v0.5.4 works against 0.1.8 too.
+        stderr_lower = (result.stderr or "").lower()
+        unknown_flag = any(
+            flag in stderr_lower
+            for flag in ("--skip-empty", "--json", "no such option")
+        )
+        if unknown_flag:
+            return _emit_docs_legacy(repo_root, out_dir=out_dir, extra_args=extra_args)
+        tail = (result.stderr or result.stdout or "").strip().splitlines()[-1:]
+        snippet = tail[0][:_STDERR_MAX_CHARS] if tail else "non-zero exit"
+        return False, f"dotgraph emit-docs exit={result.returncode}: {snippet}", {}
+
+    # Try JSON first. If stdout doesn't parse (older dotgraph that ignores
+    # --json silently), fall back to the line-count summary.
+    raw = (result.stdout or "").strip()
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        payload = {}
+
+    if isinstance(payload, dict) and "written" in payload:
+        written = payload.get("written") or []
+        skipped = payload.get("skipped") or []
+        msg = f"dotgraph emit-docs ok ({len(written)} written"
+        if skipped:
+            msg += f", {len(skipped)} skipped: {', '.join(skipped)}"
+        msg += ")"
+        return True, msg, payload
+
+    # Legacy success path — count "wrote ..." lines.
+    lines = raw.splitlines()
+    if lines:
+        return True, f"dotgraph emit-docs ok ({len(lines)} target(s) written)", {}
+    return True, "dotgraph emit-docs ok", {}
+
+
+def _emit_docs_legacy(
+    repo_root: Path,
+    *,
+    out_dir: Path | None = None,
+    extra_args: list[str] | None = None,
+) -> tuple[bool, str, dict]:
+    """Pre-0.1.10 fallback: run emit-docs without --skip-empty / --json."""
+    cmd = ["dotgraph", "emit-docs", "--target", "all"]
+    if out_dir is not None:
+        cmd.extend(["--out-dir", str(out_dir)])
+    if extra_args:
+        cmd.extend(extra_args)
+    try:
+        result = subprocess.run(
+            cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"dotgraph emit-docs failed: {exc}", {}
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "").strip().splitlines()[-1:]
         snippet = tail[0][:_STDERR_MAX_CHARS] if tail else "non-zero exit"
-        return False, f"dotgraph emit-docs exit={result.returncode}: {snippet}"
-    # Success — extract a short summary from the last stdout line if useful.
+        return False, f"dotgraph emit-docs exit={result.returncode}: {snippet}", {}
     lines = (result.stdout or "").strip().splitlines()
     if lines:
-        # Common emit-docs output is "wrote path/to/doc.md" per target.
-        return True, f"dotgraph emit-docs ok ({len(lines)} target(s) written)"
-    return True, "dotgraph emit-docs ok"
+        return True, f"dotgraph emit-docs ok ({len(lines)} target(s) written, legacy mode)", {}
+    return True, "dotgraph emit-docs ok", {}
 
 
 # ---------------------------------------------------------------------------
@@ -286,4 +409,4 @@ def _parse_iso(ts: str) -> datetime:
     return dt
 
 
-__all__ = ("DotgraphInfo", "probe", "emit_docs")
+__all__ = ("DotgraphInfo", "probe", "emit_docs", "ensure_gitignored")
