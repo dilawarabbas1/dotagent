@@ -101,6 +101,41 @@ Same renderer (`render_manifest`) handles all three; the schema entries differ p
 
 ---
 
+## Suffix-split layout for graph-derived docs (v0.5.4+)
+
+When dotgraph is installed and `.dotgraph/graph.db` exists, dotagent
+emits dotgraph's generated docs under `docs/codegraph/` with a
+`.generated.md` suffix:
+
+```
+docs/
+├── dependency-map.md                    HAND-MAINTAINED · narrative + intent
+├── codegraph/
+│   ├── dependency-map.generated.md      GENERATED · file→service edges
+│   ├── db-impact-map.generated.md       GENERATED · file→table·column·R/W
+│   ├── redis-key-registry.generated.md  GENERATED · key→owner·R/W·TTL
+│   ├── kafka-topics.generated.md        GENERATED · publishers + consumers
+│   └── endpoints.generated.md           GENERATED · HTTP route handlers
+```
+
+**Rationale.** dotgraph's edge data and the human's narrative intent
+are different kinds of truth. Mixing them in one file produces drift:
+either dotgraph overwrites curated content, or operators stop trusting
+the auto-generated section because the rest of the file is stale.
+Separating them into two files keeps each source of truth honest.
+
+**Behaviour.** On first sync after installing dotgraph + indexing:
+
+1. dotagent runs `dotgraph emit-docs --out-dir docs/codegraph`.
+2. Renames each emitted file `<name>.md` → `<name>.generated.md`.
+3. If a hand-maintained `docs/<name>.md` exists, prepends a one-time
+   reference section pointing at the generated counterpart. The
+   existing body is preserved verbatim below the injected header.
+
+The reference section carries a `<!-- dotagent: links to docs/codegraph/ -->`
+marker comment. dotagent uses this to skip re-patching on subsequent
+syncs — operators are free to edit the narrative without losing it.
+
 ## Related
 
 - `SERVICE_REPO_CLAUDE_MD.md` — service-repo tier specifics

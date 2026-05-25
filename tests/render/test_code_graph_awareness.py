@@ -229,6 +229,27 @@ def test_block_references_all_5_mcp_tools():
         assert tool in CODE_GRAPH_AWARENESS_BLOCK, f"missing tool '{tool}'"
 
 
+def test_block_does_not_claim_a_sixth_mcp_tool():
+    r"""v0.5.4 regression — `dotgraph serve` exposes exactly 5 MCP tools.
+    Adding a sixth (or removing one) without bumping the locked surface
+    contract would silently mis-advertise dotgraph's capabilities. Lock
+    the count.
+
+    Matches a top-level bullet line of the form `  · \`<name>(...)\` —`.
+    Tolerant to formatting tweaks; strict on count.
+    """
+    import re
+    pattern = re.compile(r"^\s*·\s+`([a-z_]+)\(", re.MULTILINE)
+    found = pattern.findall(CODE_GRAPH_AWARENESS_BLOCK)
+    assert set(found) == set(_MCP_TOOLS), (
+        f"awareness block must list exactly the 5 locked MCP tools "
+        f"{sorted(_MCP_TOOLS)}; found {sorted(found)}"
+    )
+    assert len(found) == 5, (
+        f"awareness block lists {len(found)} tools; locked surface is 5"
+    )
+
+
 def test_block_references_all_5_static_docs():
     for doc in _STATIC_DOCS:
         assert doc in CODE_GRAPH_AWARENESS_BLOCK, f"missing doc '{doc}'"
