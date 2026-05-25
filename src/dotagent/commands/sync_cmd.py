@@ -37,14 +37,22 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool, skip_dotgraph: bool) -
     # reads fresh content. Best-effort: any failure is logged and ignored —
     # adapter render proceeds against whatever's on disk.
     #
-    # v0.5.4: pre-seed `.gitignore` with `.dotgraph/` (idempotent) so a
-    # fresh dotgraph install doesn't commit the index by accident; pass
-    # `--skip-empty` so empty surfaces (e.g. no kafka in this project) don't
-    # produce stub docs. Config knob `dotagent.dotgraph.emit_docs.skip_empty`
-    # in .agent/config.yaml overrides the default per-project.
+    # v0.5.4:
+    # - pre-seed `.gitignore` with `.dotgraph/` (idempotent)
+    # - pass `--skip-empty` so empty surfaces don't produce stub docs
+    # - emit into `docs/codegraph/` then rename to `<name>.generated.md`
+    #   (suffix-split layout — issue #4, decision B). Hand-maintained
+    #   `docs/<name>.md` is patched ONCE to reference the generated file.
+    # Config knobs (`.agent/config.yaml`):
+    #   dotagent.dotgraph.emit_docs.skip_empty: bool  (default true)
+    #   dotagent.dotgraph.stale_threshold_hours: int  (default 168)
     if not skip_dotgraph and (paths.repo / ".dotgraph" / "graph.db").exists():
-        from ..dotgraph_probe import emit_docs as _dg_emit_docs
-        from ..dotgraph_probe import ensure_gitignored as _dg_ensure_gitignored
+        from ..dotgraph_probe import (
+            CODEGRAPH_SUBDIR,
+            apply_codegraph_layout as _dg_apply_layout,
+            emit_docs as _dg_emit_docs,
+            ensure_gitignored as _dg_ensure_gitignored,
+        )
 
         gi_msg = _dg_ensure_gitignored(paths.repo)
         if gi_msg:
@@ -52,9 +60,18 @@ def sync(no_hooks: bool, no_reindex: bool, dry_run: bool, skip_dotgraph: bool) -
 
         dg_cfg = ((cfg.raw.get("dotagent") or {}).get("dotgraph") or {}).get("emit_docs") or {}
         skip_empty = bool(dg_cfg.get("skip_empty", True))
-        ok, msg, _payload = _dg_emit_docs(paths.repo, skip_empty=skip_empty)
+        out_dir = paths.repo / CODEGRAPH_SUBDIR
+        ok, msg, _payload = _dg_emit_docs(
+            paths.repo, skip_empty=skip_empty, out_dir=out_dir,
+        )
         if ok:
             click.echo(f"· {msg}")
+            renamed, patched = _dg_apply_layout(paths.repo)
+            if patched:
+                click.echo(
+                    f"· patched {len(patched)} hand-maintained doc(s) with "
+                    f"codegraph reference: {', '.join(patched)}"
+                )
         else:
             click.echo(f"  ! {msg} (continuing)", err=True)
 

@@ -749,8 +749,166 @@ def test_sync_runs_emit_docs_when_db_present(tmp_path: Path, monkeypatch):
     result = CliRunner().invoke(sync, [])
     assert result.exit_code == 0, result.output
     assert "dotgraph emit-docs ok" in result.output
-    assert (repo / "docs" / "dependency-map.md").exists()
-    assert (repo / "docs" / "endpoints.md").exists()
+    # v0.5.4: emit goes to docs/codegraph/ + rename to .generated.md
+    assert (repo / "docs" / "codegraph" / "dependency-map.generated.md").exists()
+    assert (repo / "docs" / "codegraph" / "endpoints.generated.md").exists()
+    # Raw filenames must NOT land in docs/ root (suffix-split layout)
+    assert not (repo / "docs" / "dependency-map.md").exists()
+    assert not (repo / "docs" / "endpoints.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# v0.5.4 — issue #4: suffix-split layout (apply_codegraph_layout)
+# ---------------------------------------------------------------------------
+
+def test_layout_renames_emitted_files_to_generated_suffix(tmp_path: Path):
+    """`dependency-map.md` under docs/codegraph/ → renamed to
+    `dependency-map.generated.md`."""
+    from dotagent.dotgraph_probe import apply_codegraph_layout
+    cg = tmp_path / "docs" / "codegraph"
+    cg.mkdir(parents=True)
+    (cg / "dependency-map.md").write_text("# emitted by dotgraph\n")
+    (cg / "db-impact-map.md").write_text("# emitted by dotgraph\n")
+
+    renamed, patched = apply_codegraph_layout(tmp_path)
+
+    assert not (cg / "dependency-map.md").exists()
+    assert (cg / "dependency-map.generated.md").exists()
+    assert (cg / "db-impact-map.generated.md").exists()
+    assert any("dependency-map.generated.md" in r for r in renamed)
+    assert patched == []
+
+
+def test_layout_patches_handmaintained_file_once(tmp_path: Path):
+    """When a hand-maintained `docs/<name>.md` exists, prepend the
+    reference link section. Idempotent: re-running does not re-patch."""
+    from dotagent.dotgraph_probe import apply_codegraph_layout
+    cg = tmp_path / "docs" / "codegraph"
+    cg.mkdir(parents=True)
+    (cg / "dependency-map.md").write_text("# from dotgraph\n")
+    hand = tmp_path / "docs" / "dependency-map.md"
+    original = "# Dependency map (hand-maintained)\n\nNarrative content.\n"
+    hand.write_text(original)
+
+    renamed, patched = apply_codegraph_layout(tmp_path)
+
+    body = hand.read_text()
+    assert "<!-- dotagent: links to docs/codegraph/ -->" in body
+    assert "[`dependency-map.generated.md`]" in body
+    assert "(./codegraph/dependency-map.generated.md)" in body
+    # Original content preserved BELOW the injected header
+    assert "# Dependency map (hand-maintained)" in body
+    assert "Narrative content." in body
+    assert hand.relative_to(tmp_path).as_posix() in patched
+
+    # Re-run — must not double-patch
+    body_before = hand.read_text()
+    renamed2, patched2 = apply_codegraph_layout(tmp_path)
+    assert hand.read_text() == body_before
+    assert patched2 == []   # nothing new patched
+    # Reference marker appears exactly once
+    assert body_before.count("<!-- dotagent: links to docs/codegraph/ -->") == 1
+
+
+def test_layout_does_nothing_when_codegraph_dir_absent(tmp_path: Path):
+    from dotagent.dotgraph_probe import apply_codegraph_layout
+    renamed, patched = apply_codegraph_layout(tmp_path)
+    assert renamed == []
+    assert patched == []
+
+
+def test_layout_skips_targets_not_emitted(tmp_path: Path):
+    """If only some of the 5 targets exist in docs/codegraph/, only those
+    are renamed / patched. Missing targets are skipped silently."""
+    from dotagent.dotgraph_probe import apply_codegraph_layout
+    cg = tmp_path / "docs" / "codegraph"
+    cg.mkdir(parents=True)
+    (cg / "dependency-map.md").write_text("# emitted\n")
+    # No kafka-topics, redis-key-registry, etc.
+
+    renamed, patched = apply_codegraph_layout(tmp_path)
+
+    assert len(renamed) == 1
+    assert (cg / "dependency-map.generated.md").exists()
+    # Others not created
+    assert not (cg / "kafka-topics.generated.md").exists()
+
+
+def test_layout_overwrites_existing_generated_on_rerun(tmp_path: Path):
+    """When dotgraph re-emits dependency-map.md, the rename must replace
+    the old generated file rather than fail."""
+    from dotagent.dotgraph_probe import apply_codegraph_layout
+    cg = tmp_path / "docs" / "codegraph"
+    cg.mkdir(parents=True)
+    (cg / "dependency-map.generated.md").write_text("OLD content\n")
+    (cg / "dependency-map.md").write_text("NEW content from dotgraph\n")
+
+    renamed, patched = apply_codegraph_layout(tmp_path)
+
+    assert (cg / "dependency-map.generated.md").exists()
+    assert (cg / "dependency-map.generated.md").read_text() == "NEW content from dotgraph\n"
+
+
+def test_sync_emits_into_codegraph_subdir_and_renames(
+    tmp_path: Path, monkeypatch
+):
+    """End-to-end: sync runs emit-docs into docs/codegraph/, then the
+    layout helper renames to .generated.md."""
+    repo = _make_repo(tmp_path)
+    _install_dotgraph_shim(
+        tmp_path,
+        emit_docs_writes=["dependency-map.md", "db-impact-map.md", "endpoints.md"],
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    result = CliRunner().invoke(sync, [])
+    assert result.exit_code == 0, result.output
+
+    cg = repo / "docs" / "codegraph"
+    assert (cg / "dependency-map.generated.md").exists()
+    assert (cg / "db-impact-map.generated.md").exists()
+    assert (cg / "endpoints.generated.md").exists()
+    # Raw filenames must NOT remain
+    assert not (cg / "dependency-map.md").exists()
+
+
+def test_sync_patches_handmaintained_dep_map_on_first_run(
+    tmp_path: Path, monkeypatch
+):
+    """End-to-end: a hand-maintained docs/dependency-map.md gains the
+    reference section on the first sync, NOT on subsequent syncs."""
+    repo = _make_repo(tmp_path)
+    docs = repo / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "dependency-map.md").write_text(
+        "# Dep map by hand\n\nDescription of intended service deps.\n"
+    )
+    _install_dotgraph_shim(
+        tmp_path,
+        emit_docs_writes=["dependency-map.md"],
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    # First sync — patches
+    result1 = CliRunner().invoke(sync, [])
+    assert result1.exit_code == 0, result1.output
+    assert "patched 1 hand-maintained doc(s)" in result1.output
+
+    hand_body = (docs / "dependency-map.md").read_text()
+    assert "<!-- dotagent: links to docs/codegraph/ -->" in hand_body
+    assert "(./codegraph/dependency-map.generated.md)" in hand_body
+    assert "Description of intended service deps." in hand_body  # preserved
+
+    # Second sync — must NOT re-patch
+    snapshot = (docs / "dependency-map.md").read_text()
+    result2 = CliRunner().invoke(sync, [])
+    assert result2.exit_code == 0, result2.output
+    assert "patched" not in result2.output
+    assert (docs / "dependency-map.md").read_text() == snapshot
 
 
 def test_sync_pre_seeds_gitignore_with_dotgraph_when_db_present(
@@ -797,7 +955,8 @@ def test_sync_respects_skip_empty_config_knob(tmp_path: Path, monkeypatch):
     assert result.exit_code == 0, result.output
     # With skip_empty=false override, NOTHING gets dropped
     assert "skipped" not in result.output
-    assert (repo / "docs" / "kafka-topics.md").exists()
+    # v0.5.4: emit goes to docs/codegraph/<name>.generated.md
+    assert (repo / "docs" / "codegraph" / "kafka-topics.generated.md").exists()
 
 
 def test_sync_skips_emit_docs_when_db_absent(tmp_path: Path, monkeypatch):
@@ -809,7 +968,7 @@ def test_sync_skips_emit_docs_when_db_absent(tmp_path: Path, monkeypatch):
     result = CliRunner().invoke(sync, [])
     assert result.exit_code == 0
     assert "dotgraph emit-docs" not in result.output
-    assert not (repo / "docs" / "dependency-map.md").exists()
+    assert not (repo / "docs" / "codegraph" / "dependency-map.generated.md").exists()
 
 
 def test_sync_skip_dotgraph_flag_suppresses_emit_docs(
@@ -824,7 +983,7 @@ def test_sync_skip_dotgraph_flag_suppresses_emit_docs(
     assert result.exit_code == 0
     assert "dotgraph emit-docs" not in result.output
     # Critically: the docs/ dir from emit-docs did NOT get written
-    assert not (repo / "docs" / "dependency-map.md").exists()
+    assert not (repo / "docs" / "codegraph" / "dependency-map.generated.md").exists()
 
 
 def test_sync_proceeds_when_emit_docs_fails(tmp_path: Path, monkeypatch):

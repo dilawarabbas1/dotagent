@@ -466,4 +466,115 @@ def _parse_iso(ts: str) -> datetime:
     return dt
 
 
-__all__ = ("DotgraphInfo", "probe", "emit_docs", "ensure_gitignored")
+# ---------------------------------------------------------------------------
+# v0.5.4 — Suffix-split layout (issue #4)
+# ---------------------------------------------------------------------------
+#
+# Locked Decision B: dotgraph emits `*.generated.md` filenames under
+# `docs/codegraph/`. Hand-maintained `docs/*.md` keeps narrative/intent and
+# links to the generated counterpart. Two files per topic; no content loss;
+# one extra hop for readers.
+
+CODEGRAPH_SUBDIR = "docs/codegraph"
+
+# Five canonical targets dotgraph emit-docs produces (these are the file
+# stems WITHOUT the `.generated` suffix — that's added during rename).
+_CODEGRAPH_TARGETS = (
+    "dependency-map",
+    "db-impact-map",
+    "redis-key-registry",
+    "kafka-topics",
+    "endpoints",
+)
+
+# Marker used to identify a doc that has already been patched with a
+# reference link to its generated counterpart. Lets us detect "already
+# patched" without diff-parsing the file.
+_REFERENCE_MARKER = "<!-- dotagent: links to docs/codegraph/ -->"
+
+# Title-cased target names for the reference section header.
+_TARGET_TITLES = {
+    "dependency-map":     "Dependency map",
+    "db-impact-map":      "DB impact map",
+    "redis-key-registry": "Redis key registry",
+    "kafka-topics":       "Kafka topics",
+    "endpoints":          "Endpoints",
+}
+
+
+def apply_codegraph_layout(repo_root: Path) -> tuple[list[str], list[str]]:
+    """Rename freshly-emitted `docs/codegraph/<target>.md` files to
+    `<target>.generated.md` and patch hand-maintained counterparts.
+
+    Returns `(renamed, patched)` — two lists of relative paths that
+    were touched. Both are best-effort; missing files are skipped.
+
+    Behaviour per target (e.g. `dependency-map`):
+      1. If `docs/codegraph/dependency-map.md` exists (freshly emitted),
+         rename it to `docs/codegraph/dependency-map.generated.md`.
+         The `.generated.md` suffix is the contract — humans see at a
+         glance "this file is auto-written; edits will be wiped."
+      2. If a hand-maintained `docs/dependency-map.md` exists AND
+         doesn't already carry the reference marker, prepend a
+         one-time reference section pointing readers at the generated
+         file. The existing content is preserved verbatim BELOW the
+         injected header.
+      3. If neither side exists, do nothing for that target.
+
+    Idempotent: re-running after the first patch is a no-op (marker
+    check + rename target already exists).
+    """
+    repo = Path(repo_root)
+    codegraph_dir = repo / CODEGRAPH_SUBDIR
+
+    renamed: list[str] = []
+    patched: list[str] = []
+
+    if not codegraph_dir.is_dir():
+        return renamed, patched
+
+    for target in _CODEGRAPH_TARGETS:
+        # Step 1: rename emitted file
+        raw = codegraph_dir / f"{target}.md"
+        generated = codegraph_dir / f"{target}.generated.md"
+        if raw.exists():
+            try:
+                # If the generated path already exists (re-run), overwrite
+                # it with the latest content rather than holding both.
+                if generated.exists():
+                    generated.unlink()
+                raw.rename(generated)
+                renamed.append(str(generated.relative_to(repo)))
+            except OSError:
+                pass
+
+        # Step 2: patch hand-maintained counterpart (one-time)
+        hand = repo / "docs" / f"{target}.md"
+        if hand.exists() and generated.exists():
+            try:
+                body = hand.read_text(errors="replace")
+                if _REFERENCE_MARKER in body:
+                    continue   # already patched
+                title = _TARGET_TITLES.get(target, target.replace("-", " ").title())
+                header = (
+                    f"{_REFERENCE_MARKER}\n"
+                    f"## {title}\n\n"
+                    f"> Auto-generated section is in "
+                    f"[`{target}.generated.md`](./codegraph/{target}.generated.md). "
+                    f"Update narrative / intent below.\n\n"
+                    f"---\n\n"
+                )
+                hand.write_text(header + body)
+                patched.append(str(hand.relative_to(repo)))
+            except OSError:
+                pass
+
+    return renamed, patched
+
+
+__all__ = (
+    "DotgraphInfo", "probe", "emit_docs", "ensure_gitignored",
+    "apply_codegraph_layout", "CODEGRAPH_SUBDIR",
+    "STALE_REASON_DIRTY", "STALE_REASON_OLD", "STALE_REASON_INDEX_FILE_OLDER",
+    "STALE_REASON_ERROR", "STALE_REASON_NO_DB",
+)
