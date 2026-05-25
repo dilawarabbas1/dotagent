@@ -29,10 +29,19 @@ from pathlib import Path
 # is "<prog>, version <ver>". We strip the prefix so consumers see just X.Y.Z.
 _VERSION_PREFIX_RE = re.compile(r"^dotgraph,\s+version\s+", re.IGNORECASE)
 
-# How long since `last_indexed` is "fresh enough" before we consider the graph
-# stale, when status doesn't expose dirty_files. Used only as a fallback —
-# the primary staleness signal is `dirty_files > 0`.
-_STALE_AFTER = timedelta(hours=24)
+# v0.5.4 — default staleness threshold. Operator-overridable via
+# `dotagent.dotgraph.stale_threshold_hours` in `.agent/config.yaml`.
+# 168h = 7 days is conservative enough for weekly review cycles without
+# being noisy on active projects.
+_STALE_AFTER_HOURS_DEFAULT = 168
+
+# Staleness reason codes — surfaced in DotgraphInfo.stale_reasons so the
+# orchestrator can branch on the cause.
+STALE_REASON_DIRTY = "dirty_files"
+STALE_REASON_OLD = "last_indexed_too_old"
+STALE_REASON_NO_DB = "db_missing"
+STALE_REASON_ERROR = "probe_error"
+STALE_REASON_INDEX_FILE_OLDER = "index_file_older_than_sources"  # legacy mtime check
 
 # Maximum stderr tail we report on `status` failures; long stack traces just
 # noise up the JSON.
@@ -59,6 +68,11 @@ class DotgraphInfo:
     nodes: int | None = None
     edges: int | None = None
     unresolved: int | None = None
+    # v0.5.4 — staleness diagnostic surface. `stale_reasons` is an ordered
+    # list of reason codes (see STALE_REASON_*); `stale_threshold_hours`
+    # is the threshold actually applied. Both additive.
+    stale_reasons: list[str] | None = None
+    stale_threshold_hours: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -69,6 +83,8 @@ class DotgraphInfo:
             "dirty_files":  self.dirty_files,
             "last_indexed": self.last_indexed,
             "stale":        self.stale,
+            "stale_reasons":         list(self.stale_reasons) if self.stale_reasons else [],
+            "stale_threshold_hours": self.stale_threshold_hours,
             "error":        self.error,
             "files":        self.files,
             "nodes":        self.nodes,
@@ -77,7 +93,11 @@ class DotgraphInfo:
         }
 
 
-def probe(repo_root: Path) -> DotgraphInfo:
+def probe(
+    repo_root: Path,
+    *,
+    stale_threshold_hours: int | None = None,
+) -> DotgraphInfo:
     """Return a DotgraphInfo for the project at `repo_root`.
 
     Never raises. Every failure mode lands as a typed field on the returned
@@ -88,14 +108,25 @@ def probe(repo_root: Path) -> DotgraphInfo:
                                     error=<stderr tail>, stale=True
                                     (treat unparseable as stale by default)
 
-    Staleness heuristic:
-    - `dirty_files > 0`                                   → stale
-    - `last_indexed` older than 24h AND a source file is newer → stale
-    - `last_indexed` not available from `status` JSON     → stale only if
-                                                            `dirty_files > 0`
-    - everything else                                     → fresh
+    Staleness (v0.5.4):
+    - `dirty_files > 0`                            → STALE_REASON_DIRTY
+    - `last_indexed` ≥ `stale_threshold_hours` old → STALE_REASON_OLD
+                                                     (default 168h = 7d)
+    - source file newer than `last_indexed`        → STALE_REASON_INDEX_FILE_OLDER
+    - probe error                                  → STALE_REASON_ERROR
+    - missing db                                   → STALE_REASON_NO_DB
+
+    Reasons are surfaced in `info.stale_reasons` (list[str]). Threshold
+    in `info.stale_threshold_hours`. `info.stale` is True iff any reason
+    fires.
+
+    `stale_threshold_hours` can be overridden by the caller (typically
+    from `.agent/config.yaml`'s `dotagent.dotgraph.stale_threshold_hours`).
     """
-    info = DotgraphInfo(installed=False)
+    threshold = stale_threshold_hours if stale_threshold_hours is not None \
+        else _STALE_AFTER_HOURS_DEFAULT
+
+    info = DotgraphInfo(installed=False, stale_threshold_hours=threshold)
     if shutil.which("dotgraph") is None:
         return info
     info.installed = True
@@ -108,16 +139,20 @@ def probe(repo_root: Path) -> DotgraphInfo:
 
     # Status is meaningful only when the db exists; otherwise dotgraph itself
     # would raise. Don't even attempt — saves a subprocess on cold projects.
+    # `db_present=False` is NOT stale — it's an unindexed project. Operator
+    # action is "run dotgraph index ." not "refresh stale index."
     if not info.db_present:
+        info.stale_reasons = []
         return info
 
     status_json = _run_status_json(repo_root)
     if status_json is None:
-        # status subprocess crashed; treat as stale by default
+        info.stale_reasons = [STALE_REASON_ERROR]
         info.stale = True
         return info
     if isinstance(status_json, dict) and "error" in status_json:
         info.error = status_json["error"]
+        info.stale_reasons = [STALE_REASON_ERROR]
         info.stale = True
         return info
 
@@ -128,7 +163,10 @@ def probe(repo_root: Path) -> DotgraphInfo:
     info.edges       = _as_int(status_json.get("edges"))
     info.unresolved  = _as_int(status_json.get("unresolved"))
     info.last_indexed = status_json.get("last_indexed")  # may be absent — that's OK
-    info.stale       = _compute_stale(repo_root, info)
+
+    info.stale, info.stale_reasons = _compute_stale(
+        repo_root, info, threshold_hours=threshold,
+    )
     return info
 
 
@@ -345,34 +383,53 @@ def _as_int(value) -> int | None:
         return None
 
 
-def _compute_stale(repo_root: Path, info: DotgraphInfo) -> bool:
-    """Decide whether the graph is stale.
+def _compute_stale(
+    repo_root: Path,
+    info: DotgraphInfo,
+    *,
+    threshold_hours: int = _STALE_AFTER_HOURS_DEFAULT,
+) -> tuple[bool, list[str]]:
+    """Decide whether the graph is stale, returning reason codes.
 
-    Heuristic (documented in the module docstring):
-    1. `dirty_files > 0`                       → stale
-    2. `last_indexed` older than 24h AND some
-       source file mtime > last_indexed        → stale
-    3. otherwise                               → fresh
+    Returns `(is_stale, reasons)` where `reasons` is an ordered list of
+    STALE_REASON_* codes explaining WHY. `is_stale` is True iff any
+    reason fires.
 
-    Source-file mtime check walks the repo (excluding `.git`, `.dotgraph`,
-    `node_modules`, `__pycache__`, `.venv`, `.agent/.cache`) but bounds the
-    scan: returns True on the first newer file found. Empirically this is
-    <50ms on a 10k-file repo.
+    Heuristic (v0.5.4):
+    1. `dirty_files > 0`                              → STALE_REASON_DIRTY
+    2. `last_indexed` older than `threshold_hours`    → STALE_REASON_OLD
+       (additionally, if some source file is newer than last_indexed,
+        also adds STALE_REASON_INDEX_FILE_OLDER as a sub-signal)
+    3. otherwise                                      → fresh, reasons=[]
+
+    The reason list lets `dotagent doctor` (and downstream gates like
+    Coda's pre-cycle check) branch on the cause:
+      - dirty_files > 0       → tell operator "N files modified since index"
+      - too_old AND src_newer → tell operator "index is stale AND drifting"
+      - too_old alone         → tell operator "index hasn't been refreshed in N days"
+
+    Source-file mtime walk excludes `.git`, `.dotgraph`, `node_modules`,
+    `__pycache__`, `.venv`, `.agent`. Bounded — returns on first match.
     """
+    reasons: list[str] = []
+
     if info.dirty_files is not None and info.dirty_files > 0:
-        return True
-    if not info.last_indexed:
-        # No timestamp from status — we can't compute mtime-vs-indexed.
-        # Conservative: not stale (we have no evidence either way).
-        return False
-    try:
-        last = _parse_iso(info.last_indexed)
-    except ValueError:
-        return True   # malformed timestamp from dotgraph → flag stale
-    if datetime.now(timezone.utc) - last < _STALE_AFTER:
-        return False
-    # Older than 24h — check whether any source file is newer.
-    return _any_source_newer_than(repo_root, last)
+        reasons.append(STALE_REASON_DIRTY)
+
+    if info.last_indexed:
+        try:
+            last = _parse_iso(info.last_indexed)
+            age = datetime.now(timezone.utc) - last
+            if age >= timedelta(hours=threshold_hours):
+                reasons.append(STALE_REASON_OLD)
+                # Optional sub-signal: at least one source file is newer.
+                if _any_source_newer_than(repo_root, last):
+                    reasons.append(STALE_REASON_INDEX_FILE_OLDER)
+        except ValueError:
+            # Malformed timestamp from dotgraph → flag stale-with-old reason
+            reasons.append(STALE_REASON_OLD)
+
+    return (len(reasons) > 0, reasons)
 
 
 _SKIP_DIRS = {

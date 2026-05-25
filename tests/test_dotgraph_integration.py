@@ -231,6 +231,209 @@ def test_probe_dirty_files_marks_stale(tmp_path: Path, monkeypatch):
     assert info.stale is True
 
 
+# ---------------------------------------------------------------------------
+# v0.5.4 — stale alarm + reasons + threshold
+# ---------------------------------------------------------------------------
+
+def test_probe_emits_threshold_in_output(tmp_path: Path, monkeypatch):
+    """`stale_threshold_hours` always present in DotgraphInfo.to_dict()."""
+    _install_dotgraph_shim(tmp_path, monkeypatch=monkeypatch)
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path)
+    d = info.to_dict()
+    assert "stale_threshold_hours" in d
+    assert d["stale_threshold_hours"] == 168   # default 7d
+
+
+def test_probe_threshold_override_via_kwarg(tmp_path: Path, monkeypatch):
+    _install_dotgraph_shim(tmp_path, monkeypatch=monkeypatch)
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path, stale_threshold_hours=24)
+    assert info.stale_threshold_hours == 24
+
+
+def test_probe_stale_reasons_includes_dirty_files(tmp_path: Path, monkeypatch):
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 7, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path)
+    assert info.stale is True
+    assert "dirty_files" in info.stale_reasons
+
+
+def test_probe_stale_reasons_includes_last_indexed_too_old(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    eight_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 0, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+            "last_indexed": eight_days_ago,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path)   # default threshold 168h = 7d
+    assert info.stale is True
+    assert "last_indexed_too_old" in info.stale_reasons
+    # `dirty_files` is NOT a reason here
+    assert "dirty_files" not in info.stale_reasons
+
+
+def test_probe_fresh_when_last_indexed_within_threshold(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    six_days_ago = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat()
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 0, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+            "last_indexed": six_days_ago,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path)
+    assert info.stale is False
+    assert info.stale_reasons == []
+
+
+def test_probe_threshold_kwarg_makes_younger_index_stale(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 0, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+            "last_indexed": two_days_ago,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path, stale_threshold_hours=24)   # tighter than default
+    assert info.stale is True
+    assert "last_indexed_too_old" in info.stale_reasons
+
+
+def test_probe_dirty_AND_old_lists_both_reasons(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    eight_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 5, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+            "last_indexed": eight_days_ago,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(tmp_path)
+    info = probe(tmp_path)
+    assert info.stale is True
+    assert "dirty_files" in info.stale_reasons
+    assert "last_indexed_too_old" in info.stale_reasons
+
+
+def test_doctor_json_emits_stale_reasons_and_threshold(
+    tmp_path: Path, monkeypatch
+):
+    """v0.5.4 — `doctor --format json` exposes stale_reasons + threshold
+    so orchestrators can branch programmatically."""
+    repo = _make_repo(tmp_path)
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 100, "dirty_files": 9, "nodes": 5000,
+            "edges": 8000, "unresolved": 1,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    result = CliRunner().invoke(doctor, ["--format", "json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    dg = payload["dotgraph"]
+    assert dg["stale"] is True
+    assert "stale_reasons" in dg
+    assert "dirty_files" in dg["stale_reasons"]
+    assert dg["stale_threshold_hours"] == 168
+
+
+def test_doctor_respects_config_threshold(tmp_path: Path, monkeypatch):
+    """`dotagent.dotgraph.stale_threshold_hours: N` in config.yaml overrides
+    the default."""
+    import yaml as _yaml
+    from datetime import datetime, timedelta, timezone
+
+    repo = _make_repo(tmp_path)
+    cfg_path = repo / ".agent" / "config.yaml"
+    cfg = _yaml.safe_load(cfg_path.read_text())
+    cfg.setdefault("dotagent", {}).setdefault("dotgraph", {})[
+        "stale_threshold_hours"] = 12
+    cfg_path.write_text(_yaml.safe_dump(cfg))
+
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 42, "dirty_files": 0, "nodes": 7361,
+            "edges": 12000, "unresolved": 3,
+            "last_indexed": two_days_ago,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    result = CliRunner().invoke(doctor, ["--format", "json"])
+    payload = json.loads(result.output)
+    dg = payload["dotgraph"]
+    assert dg["stale_threshold_hours"] == 12
+    assert dg["stale"] is True
+    assert "last_indexed_too_old" in dg["stale_reasons"]
+
+
+def test_doctor_text_emits_hint_when_stale(tmp_path: Path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    _install_dotgraph_shim(
+        tmp_path,
+        status_json={
+            "files": 100, "dirty_files": 9, "nodes": 5000,
+            "edges": 8000, "unresolved": 1,
+        },
+        monkeypatch=monkeypatch,
+    )
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    result = CliRunner().invoke(doctor, [])
+    assert result.exit_code == 0
+    # The hint mentions the action + dirty count
+    assert "hint: run `dotgraph index" in result.output
+    assert "9 dirty files" in result.output
+
+
+def test_doctor_text_no_hint_when_fresh(tmp_path: Path, monkeypatch):
+    repo = _make_repo(tmp_path)
+    _install_dotgraph_shim(tmp_path, monkeypatch=monkeypatch)
+    _make_dotgraph_db(repo)
+    monkeypatch.chdir(repo)
+
+    result = CliRunner().invoke(doctor, [])
+    assert result.exit_code == 0
+    assert "hint:" not in result.output
+
+
 def test_probe_status_crash_captures_error(tmp_path: Path, monkeypatch):
     """dotgraph status crash → installed=True, db_present=True, error set,
     stale=True (conservative default)."""
