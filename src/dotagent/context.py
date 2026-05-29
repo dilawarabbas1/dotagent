@@ -53,45 +53,63 @@ class Context:
 
     # ---- helpers for adapters ---------------------------------------------
 
+    # ---- by-kind aggregation ----------------------------------------------
+    #
+    # A "kind" (bug_registry, anti_patterns, db_impact_map, …) can be backed
+    # by MORE THAN ONE source doc. Large/sharded projects keep the canonical
+    # entry as a thin index stub and put the real content in per-domain shards
+    # registered under `sources.extra` with the same `kind` (e.g.
+    # bug-registry-{infrastructure,agents,orchestrator}.md all kind
+    # "bug_registry"). The accessors below USED TO read only the single
+    # canonically-named source (`self.sources.get("bug_registry")`), so every
+    # shard's content was parsed + cached but never surfaced in the context
+    # the agent reads — thousands of lines of real bug/anti-pattern/table
+    # knowledge went invisible. These helpers aggregate ACROSS every source
+    # whose `.kind` matches, deduped by (id, title), canonical + shards alike.
+
+    def _iter_kind(self, kind: str):
+        """Yield (entry, source) for every entry across all sources of `kind`,
+        deduped by (id, title). Canonical source + same-kind extra shards."""
+        seen: set[tuple[str, str]] = set()
+        for src in self.sources.values():
+            if src.kind != kind or not src.exists:
+                continue
+            for e in src.entries:
+                key = (e.id, e.title)
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield e, src
+
+    def _entries_for_kind(self, kind: str) -> list[SourceEntry]:
+        return [e for e, _ in self._iter_kind(kind)]
+
     def top_bugs(self, n: int | None = None) -> list[SourceEntry]:
         n = n if n is not None else self.config_top_n.get("bug_registry_top_n", 15)
-        src = self.sources.get("bug_registry")
-        if not src or not src.exists:
-            return []
-        return _rank_by_severity(src.entries)[:n]
+        return _rank_by_severity(self._entries_for_kind("bug_registry"))[:n]
 
     def top_anti_patterns(self, n: int | None = None) -> list[SourceEntry]:
         n = n if n is not None else self.config_top_n.get("anti_patterns_top_n", 10)
-        src = self.sources.get("anti_patterns")
-        if not src or not src.exists:
-            return []
-        return _rank_by_severity(src.entries)[:n]
+        return _rank_by_severity(self._entries_for_kind("anti_patterns"))[:n]
 
     def redis_keys(self) -> list[SourceEntry]:
-        src = self.sources.get("redis_keys")
-        return list(src.entries) if src and src.exists else []
+        return self._entries_for_kind("redis_keys")
 
     def db_impact(self) -> list[SourceEntry]:
-        src = self.sources.get("db_impact_map")
-        return list(src.entries) if src and src.exists else []
+        return self._entries_for_kind("db_impact_map")
 
     def dependency_map(self) -> list[SourceEntry]:
-        src = self.sources.get("dependency_map")
-        return list(src.entries) if src and src.exists else []
+        return self._entries_for_kind("dependency_map")
 
     def architecture_sections(self) -> list[SourceEntry]:
-        src = self.sources.get("architecture")
-        return list(src.entries) if src and src.exists else []
+        return self._entries_for_kind("architecture")
 
     def hotspots_for_files(self, files: list[str]) -> dict[str, list[SourceEntry]]:
         """For a list of files, return matching entries from bug-registry / anti-patterns / db / redis."""
         out: dict[str, list[SourceEntry]] = {"bugs": [], "anti_patterns": [], "tables": [], "keys": []}
         files_lower = {f.lower() for f in files if f}
         for kind, key in (("bug_registry", "bugs"), ("anti_patterns", "anti_patterns")):
-            src = self.sources.get(kind)
-            if not src or not src.exists:
-                continue
-            for e in src.entries:
+            for e in self._entries_for_kind(kind):
                 if any(f.lower() in files_lower or any(part in files_lower for part in [f.lower()])
                        for f in e.files):
                     out[key].append(e)
@@ -117,15 +135,14 @@ class Context:
         n = top_n if top_n is not None else self.config_top_n.get("conflicts_top_n", 8)
 
         rows: list[dict] = []
+        files_set = {f.lower() for f in files}
         for kind_id, kind_label, source_kind in (
             ("bugs",          "bug-registry", "bug_registry"),
             ("anti_patterns", "anti-pattern", "anti_patterns"),
         ):
-            src = self.sources.get(source_kind)
-            if not src or not src.exists:
-                continue
-            files_set = {f.lower() for f in files}
-            for e in src.entries:
+            # Aggregate across the canonical source AND any same-kind shards
+            # so a conflict cited only in a backend shard still surfaces.
+            for e, src in self._iter_kind(source_kind):
                 touched = [f for f in (e.files or []) if f.lower() in files_set]
                 if not touched:
                     continue
