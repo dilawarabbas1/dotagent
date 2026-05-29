@@ -4,6 +4,64 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] — 2026-05-29
+
+### Fixed — sharded sources now surface to the agent (real-world bug)
+
+Large projects following the hand-maintained docs convention split a
+single "kind" of source across multiple shards (e.g.
+`docs/bug-registry-{agents,infrastructure,orchestrator}.md`,
+`docs/db-impact-map-{master,tenant,vector}.md`,
+`docs/redis-key-registry-{tenant,global,events}.md`) registered under
+`sources.extra` with the same `kind`.
+
+The Context accessors read only the single canonically-named source:
+
+```python
+src = self.sources.get("bug_registry")   # single key lookup
+```
+
+So every shard's parsed entries sat in `.agent/.cache/sources.json` +
+pointer cards but **never reached the context the agent reads.**
+
+**Measured on a real sharded project:**
+
+| Accessor              | Before | After |
+|-----------------------|------:|------:|
+| `top_bugs`            |     2 |   533 |
+| `top_anti_patterns`   |     0 |   242 |
+
+The agent was reading a canonical stub that parsed to "no entries"
+while 533 bugs + 242 anti-patterns lived in the shards, invisible.
+
+### Implementation
+
+- New `_iter_kind()` / `_entries_for_kind()` helpers in `context.py`
+  aggregate across every source whose `.kind` matches (canonical +
+  same-kind extras), deduped by `(id, title)`.
+- The following accessors switch to the kind-aggregated reader:
+  `top_bugs` · `top_anti_patterns` · `redis_keys` · `db_impact` ·
+  `dependency_map` · `architecture_sections` · `hotspots_for_files` ·
+  `detect_conflicts`.
+- No config change needed for projects that already register shards
+  under `sources.extra` with the right `kind`.
+
+### Tests (+1)
+
+`test_kind_aggregates_across_extra_shards` pins the behaviour: when
+two shards declare the same kind, both contribute to the agent's
+view. The accessor returns the union, deduped.
+
+Full suite: **834 passed, 2 skipped.**
+
+### Backward compat
+
+- Single-canonical-source projects unchanged (the kind-aggregate
+  helper falls through to the single source when no extras carry
+  the same kind).
+- No schema changes; no config changes; no breaking changes to any
+  public API.
+
 ## [0.5.4] — 2026-05-26
 
 ### Added — dotgraph integration polish (six follow-ups from RedScope run)
