@@ -108,3 +108,49 @@ def test_top_bugs_orders_by_severity(tmp_path: Path):
     bugs = ctx.top_bugs()
     assert bugs[0].severity == "critical"
     assert bugs[-1].severity == "low"
+
+
+# Sharded-docs aggregation: a kind backed by a thin canonical index PLUS
+# per-domain shards (registered under sources.extra with the same kind)
+# must surface entries from EVERY shard, not just the canonical file.
+# Regression for the composr case: backend/docs/bug-registry-*.md held
+# thousands of lines of real entries that never reached the agent context
+# because top_bugs() read only sources["bug_registry"] (an index stub).
+SHARD_AGENTS = """# Bug Registry — agents shard
+
+## AGT-9001: Agent prompt cache poisoning
+- **Severity**: high
+- **Files**: services/agent-runner/prompt.py
+
+Stale cache served a poisoned prompt across tenants.
+"""
+
+SHARD_INFRA = """# Bug Registry — infra shard
+
+## INF-7001: Redis connection storm on boot
+- **Severity**: medium
+- **Files**: services/boot/redis_init.py
+
+All workers opened clients simultaneously and tripped maxclients.
+"""
+
+
+def test_kind_aggregates_across_extra_shards(tmp_path: Path):
+    paths = _setup_repo(tmp_path)
+    # Canonical bug-registry (index stub with one entry) already written by
+    # _setup_repo. Add two backend shards + register them as same-kind extras.
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / "docs" / "bug-registry-agents.md").write_text(SHARD_AGENTS)
+    (tmp_path / "docs" / "bug-registry-infra.md").write_text(SHARD_INFRA)
+    cfg = Config.load(paths)
+    cfg.raw["sources"]["extra"] = [
+        {"name": "bug_registry_agents", "path": "docs/bug-registry-agents.md", "kind": "bug_registry"},
+        {"name": "bug_registry_infra", "path": "docs/bug-registry-infra.md", "kind": "bug_registry"},
+    ]
+    reindex_all(paths, cfg.raw["sources"])
+    ctx = build(paths, actor="alice", config=cfg)
+    ids = {b.id for b in ctx.top_bugs()}
+    # Canonical entries AND both shards' entries are all surfaced.
+    assert "BUG-101" in ids, f"canonical entry missing: {ids}"
+    assert "AGT-9001" in ids, f"agents-shard entry missing: {ids}"
+    assert "INF-7001" in ids, f"infra-shard entry missing: {ids}"
