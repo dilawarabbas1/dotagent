@@ -123,6 +123,15 @@ def handoff_to_qa(paths: Paths, project: Project, module_id: str, *, dev_notes: 
         raise ProjectError("no active cycle — run `start` first")
 
     cycle = mod.current_cycle
+    if cycle.handoff_at:
+        # A direct handoff after failed QA must not rewrite the reviewed cycle.
+        # Repairs may already be committed, so their base is the prior handoff.
+        cycle = Cycle(
+            n=len(mod.cycles) + 1,
+            started_at=cycle.qa_result.recorded_at if cycle.qa_result else now(),
+            start_sha=cycle.handoff_sha or cycle.start_sha,
+        )
+        mod.cycles.append(cycle)
     cycle.handoff_at = now()
     cycle.handoff_sha = current_sha(paths.repo)
     cycle.files_changed = files_changed_since(paths.repo, cycle.start_sha) if cycle.start_sha else []

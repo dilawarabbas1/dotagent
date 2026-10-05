@@ -8,7 +8,15 @@ import pytest
 from dotagent.config import Config, merge_defaults
 from dotagent.context import build as build_context
 from dotagent.paths import Paths
-from dotagent.project import Module, ModuleState, Project, load_project, save_project
+from dotagent.project import (
+    Contract,
+    ContractStatus,
+    Module,
+    ModuleState,
+    Project,
+    load_project,
+    save_project,
+)
 from dotagent.project.handoff import (
     detect_test_commands,
     qa_findings_template,
@@ -165,6 +173,97 @@ def test_full_dev_qa_loop_to_ship(tmp_path: Path):
     assert completion.exists()
     assert "Completion" in completion.read_text()
     assert "Cycles to ship:** 2" in completion.read_text()
+
+
+@pytest.mark.parametrize("explicit_start", [False, True])
+def test_rehandoff_after_failed_qa_preserves_reviewed_cycle(tmp_path: Path, explicit_start: bool):
+    paths = _setup(tmp_path)
+    _init_git(paths.repo)
+    project = _make_project()
+    init_project(paths, project)
+    mod = _make_module(project, "Repair")
+    add_module(paths, project, mod)
+    start_module(paths, project, mod.id)
+    handoff_to_qa(paths, project, mod.id, dev_notes="first implementation")
+    record_qa(paths, project, mod.id, passed=False, rationale="first review failed")
+
+    first_dir = paths.module_cycle_dir(mod.id, 1)
+    frozen = first_dir / "contract.frozen.md"
+    frozen.write_text("# Original agreed contract\nThis review applies to cycle one.\n")
+    mod.cycles[0].contract = Contract(
+        path=str(frozen.relative_to(tmp_path)), status=ContractStatus.FROZEN,
+        frozen_at="2026-05-01T12:00:00Z", frozen_by="reviewer",
+    )
+    first_cycle = mod.cycles[0].to_dict()
+    first_files = {p.name: p.read_bytes() for p in first_dir.iterdir() if p.is_file()}
+    if explicit_start:
+        start_module(paths, project, mod.id)
+    handoff_to_qa(paths, project, mod.id, dev_notes="repaired implementation")
+
+    assert mod.cycle_count == 2
+    assert mod.current_cycle.n == 2
+    assert mod.current_cycle.qa_result is None
+    assert mod.current_cycle.contract is None
+    assert mod.cycles[0].to_dict() == first_cycle
+    assert {p.name: p.read_bytes() for p in first_dir.iterdir() if p.is_file()} == first_files
+    second_handoff = paths.module_cycle_dir(mod.id, 2) / "dev-handoff.md"
+    assert "repaired implementation" in second_handoff.read_text()
+
+    record_qa(paths, project, mod.id, passed=True, rationale="second review passed")
+    reloaded = load_project(paths).modules[mod.id]
+    assert reloaded.cycle_count == 2
+    assert reloaded.cycles[0].to_dict() == first_cycle
+    assert reloaded.cycles[1].qa_result.passed
+    assert reloaded.cycles[1].qa_result.cycle == 2
+
+
+def test_direct_rehandoff_diff_starts_at_previous_handoff(tmp_path: Path):
+    paths = _setup(tmp_path)
+    _init_git(paths.repo)
+    source = tmp_path / "repair.py"
+    source.write_text("# initial implementation\n")
+    subprocess.run(["git", "add", "repair.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+    project = _make_project()
+    init_project(paths, project)
+    mod = _make_module(project, "Repair")
+    add_module(paths, project, mod)
+    start_module(paths, project, mod.id)
+    handoff_to_qa(paths, project, mod.id)
+    previous_sha = mod.current_cycle.handoff_sha
+    record_qa(paths, project, mod.id, passed=False, rationale="needs repair")
+    review_time = mod.current_cycle.qa_result.recorded_at
+
+    source.write_text("# repaired implementation\n")
+    subprocess.run(["git", "add", "repair.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "repair"], cwd=tmp_path, check=True)
+    handoff_to_qa(paths, project, mod.id)
+    assert mod.current_cycle.start_sha == previous_sha
+    assert mod.current_cycle.started_at == review_time
+    assert mod.current_cycle.files_changed == ["repair.py"]
+    assert mod.current_cycle.handoff_sha != previous_sha
+
+    with pytest.raises(ProjectError, match="cannot hand off"):
+        handoff_to_qa(paths, project, mod.id)
+    assert mod.cycle_count == 2
+
+
+def test_repeated_direct_rehandoffs_keep_each_failed_review(tmp_path: Path):
+    paths = _setup(tmp_path)
+    _init_git(paths.repo)
+    project = _make_project()
+    init_project(paths, project)
+    mod = _make_module(project, "Repair")
+    add_module(paths, project, mod)
+    start_module(paths, project, mod.id)
+    for n in range(1, 4):
+        handoff_to_qa(paths, project, mod.id, dev_notes=f"attempt {n}")
+        record_qa(paths, project, mod.id, passed=n == 3, rationale=f"review {n}")
+    reloaded = load_project(paths).modules[mod.id]
+    assert [c.qa_result.passed for c in reloaded.cycles] == [False, False, True]
+    assert [c.qa_result.rationale for c in reloaded.cycles] == ["review 1", "review 2", "review 3"]
+    for n in range(1, 4):
+        assert f"attempt {n}" in (paths.module_cycle_dir(mod.id, n) / "dev-handoff.md").read_text()
 
 
 def test_qa_record_rationale_required(tmp_path: Path):
